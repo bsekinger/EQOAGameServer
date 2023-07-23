@@ -7,6 +7,7 @@ using ReturnHome.Server.Opcodes;
 using ReturnHome.Server.EntityObject.Player;
 using ReturnHome.Server.Zone;
 using ReturnHome.Server.Opcodes.Chat;
+using ReturnHome.Server.Managers;
 
 namespace ReturnHome.Server.EntityObject
 {
@@ -14,6 +15,7 @@ namespace ReturnHome.Server.EntityObject
     {
         private World _world;
 
+        public int Zone;
         public float x;
         public float y;
         public float z;
@@ -264,6 +266,13 @@ namespace ReturnHome.Server.EntityObject
             ChatMessage.GenerateClientSpecificChat(((Character)this).characterSession, message);
             */
         }
+
+        public void UpdateZone(World world, float X, float Z)
+        {
+            Zone = NavMeshManager.GetPlayerZone(world, X, Z);
+        }
+
+
 
         public void UpdateFacing(byte facing, byte turning)
         {

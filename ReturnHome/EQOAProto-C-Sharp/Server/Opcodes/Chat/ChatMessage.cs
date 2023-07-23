@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Text;
 using ReturnHome.Server.EntityObject;
 using ReturnHome.Server.EntityObject.Player;
+using ReturnHome.Server.Managers;
 using ReturnHome.Server.Network;
 using ReturnHome.Server.Opcodes.Messages.Server;
 using ReturnHome.Utilities;
@@ -119,6 +120,15 @@ namespace ReturnHome.Server.Opcodes.Chat
 
                 else
                     message = "Unknown opcode display is now off.";
+
+                GenerateClientSpecificChat(MySession, message);
+            }
+
+            if (temp[0] == "!z")
+            {
+                int zone;
+                zone = MySession.MyCharacter.Zone;
+                message = $"Zone = {zone}";
 
                 GenerateClientSpecificChat(MySession, message);
             }

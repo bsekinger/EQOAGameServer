@@ -79,6 +79,7 @@ namespace ReturnHome.Server.Network
             //Add Base array for client update object, then update character object
             Mysession.rdpCommIn.connectionData.client.AddBaseClientArray(message.message, message.Sequence);
             Mysession.MyCharacter.UpdatePosition(x, y, z);
+            Mysession.MyCharacter.UpdateZone(Mysession.MyCharacter.World, x, z);
             Mysession.MyCharacter.Animation = Animation;
             Mysession.MyCharacter.UpdateFacing(Facing, Turning);
             Mysession.MyCharacter.UpdateVelocity(Velx, Vely, Velz);

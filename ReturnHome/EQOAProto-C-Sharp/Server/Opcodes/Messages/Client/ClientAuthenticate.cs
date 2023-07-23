@@ -76,7 +76,7 @@ namespace ReturnHome.Server.Opcodes.Messages.Client
                     if (sql.AccountExists(AccountName, out int accountID))
                     {
                         session.AccountID = accountID;
-                        Console.WriteLine("Account verified");
+                        //Console.WriteLine("Account verified");
                     }
 
                     else
