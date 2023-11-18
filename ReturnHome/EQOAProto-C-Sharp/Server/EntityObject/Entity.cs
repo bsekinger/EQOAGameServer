@@ -18,6 +18,8 @@ namespace ReturnHome.Server.EntityObject
         private long _killTime;
         private EntityType _npcType = 0;
         public int ServerID;
+        public int RoamType;
+        public bool isRoaming = false;
         public AIContainer aiContainer;
 
 

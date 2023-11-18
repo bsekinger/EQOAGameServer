@@ -19,7 +19,7 @@ namespace ReturnHome.Server.Network
             if (message.Messagetype == MessageType.ClientUpdate)
                 ProcessUnreliableClientUpdate(Mysession, message);
         }
-
+        
         //Uncompress and process update
         private static void ProcessUnreliableClientUpdate(Session Mysession, Message message)
         {
@@ -57,10 +57,10 @@ namespace ReturnHome.Server.Network
             float z = CoordinateConversions.ConvertXZToFloat(reader.ReadUint24());
 
             //TODO: Figure out how these value's translate into the values for client updates to show proper movement distribution
-            ushort Velx = (ushort)(reader.Read<ushort>() ^ 0x80);
+            ushort Velx = (ushort)(reader.Read<ushort>() ^ 0x80);    
             ushort Vely = reader.Read<ushort>();
-            ushort Velz = (ushort)(reader.Read<ushort>() ^ 0x80);
-            
+            ushort Velz = (ushort)(reader.Read<ushort>() ^ 0x80);            
+
             //Skip 6 bytes...
             reader.Position += 6;
             byte Facing = reader.Read<byte>();
@@ -80,11 +80,13 @@ namespace ReturnHome.Server.Network
             Mysession.rdpCommIn.connectionData.client.AddBaseClientArray(message.message, message.Sequence);
             Mysession.MyCharacter.UpdatePosition(x, y, z);
             Mysession.MyCharacter.UpdateZone(Mysession.MyCharacter.World, x, z);
+            Mysession.MyCharacter.UpdateMesh();
+            Mysession.MyCharacter.UnloadMesh();
             Mysession.MyCharacter.Animation = Animation;
             Mysession.MyCharacter.UpdateFacing(Facing, Turning);
             Mysession.MyCharacter.UpdateVelocity(Velx, Vely, Velz);
             //Mysession.MyCharacter.Target = Target;
-            Mysession.objectUpdate = true;
+            Mysession.objectUpdate = true;           
 
             //Would likely need some checks here eventually? Shouldn't blindly trust client
             //First 4029 means we are ingame

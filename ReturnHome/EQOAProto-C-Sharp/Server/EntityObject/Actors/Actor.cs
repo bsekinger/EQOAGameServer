@@ -21,7 +21,7 @@ namespace ReturnHome.Server.EntityObject.Actors
 
         public Actor(string charName, float xCoord, float yCoord, float zCoord, int facing, int world, int modelid, float size,
             int primary, int secondary, int shield, int hair_color, int hair_length, int hair_style, int level, int torso, int forearms,
-            int gloves, int legs, int feet, int head, EntityType npcType, int serverID) : base(false, level)
+            int gloves, int legs, int feet, int head, EntityType npcType, int serverID, int roamType) : base(false, level)
         {
 
             CharName = charName;
@@ -51,6 +51,7 @@ namespace ReturnHome.Server.EntityObject.Actors
             Target = 0xFFFFFFFF;
             EntityType = npcType;
             ServerID = serverID;
+            RoamType = roamType;
 
             corpse = new(this);
 

@@ -3,148 +3,311 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using DotRecast.Core;
-using DotRecast.Detour;
-using DotRecast.Detour.Io;
-using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
+using System.Numerics;
+using System.Runtime.InteropServices;
 using ReturnHome.Server.EntityObject;
 
 namespace ReturnHome.Server.Managers
 {
-    public static class NavMeshManager
+    public unsafe partial class NavMeshManager
     {
-        private static int MinX = 2000;
-        private static int MinZ = 2000;
-        private static int MaxX = 26000;
-        private static int MaxZ = 32000;
-        private const int ZoneWidth = 2000;
-        private const int ZoneHeight = 2000;
-        private static int ZonesPerRow;
-        private static readonly DtMeshSetReader reader = new DtMeshSetReader();
-        private static byte previousZoneIndex = 255; // Set an initial value to ensure it's different from any valid zone index
 
-        public static DtNavMesh mesh = null;
+        const string DllPath = @"C:\Users\bseki\source\repos\EQOAGameServer\DetourWrapper\DetourWrapper.dll";
+        [LibraryImport(DllPath), UnmanagedCallConv]
+        public static partial void* allocDetour();
 
-        public static byte GetPlayerZone(World world, float x, float z)
+        [LibraryImport(DllPath), UnmanagedCallConv]
+        public static partial void freeDetour(void* detourPtr);
+
+        [LibraryImport(DllPath), UnmanagedCallConv]        
+        public static partial uint load(void* detourPtr, [MarshalAs(UnmanagedType.LPStr)] string filePath);
+
+        [LibraryImport(DllPath), UnmanagedCallConv]
+        public static partial uint random_roam(void* ptr, void* start, void* strPath);
+
+        [LibraryImport(DllPath), UnmanagedCallConv]
+        public static partial uint find_path(void* ptr, void* start, void* end, void* strPath);
+
+        [LibraryImport(DllPath), UnmanagedCallConv]
+        public static partial uint check_los(void* ptr, void* start, void* end, void* range);
+
+        static readonly Rectangle[][] Worlds =
         {
-            byte ZoneIndex;
-            int playerX = (int)x;
-            int playerZ = (int)z;
-            switch (world)
+            // Define rectangles for each world
+            new Rectangle[] // Tunaria = 0
             {
-                case (World)0: //Tunaria    2000.0f, 2000.0f, 26000.0f, 32000.0f
-                    MinX = 2000;
-                    MaxX = 26000;
-                    MinZ = 2000;
-                    MaxZ = 32000;
-                break;
+                new Rectangle(20000, 0, 8000, 4000), // Area 1
+                new Rectangle(2000, 4000, 26000, 18000), // Area 2
+                new Rectangle(2000, 22000, 4000, 2000), // Area 3
+                new Rectangle(12000, 22000, 16000, 12000) // Area 4
+            },
+            new Rectangle[] // RatheMountains = 1
+            {
+                new Rectangle(2000, 2000, 8000, 8000)
+            },
+            new Rectangle[] // RatheMountains = 2
+            {
+                new Rectangle(2000, 0, 12000, 14000)
+            },
+            new Rectangle[] // LavaStorm Mountains = 3
+            {
+                new Rectangle(4000, 4000, 4000, 2000)
+            },
+            new Rectangle[] // Plane of Sky = 4
+            {
+                new Rectangle(4000, 4000, 2000, 4000)
+            },
+            new Rectangle[] // Secrets = 5
+            {
+                new Rectangle(4000, 2000, 2000, 2000), // Last Home
+                new Rectangle(4000, 6000, 2000, 2000)  // Zoaran Plateau
+            },
+        };
 
-                case (World)1: //Rathe Mountains    4000.0f, 2000.0f, 6000.0f, 8000.0f
-                    MinX = 4000;
-                    MaxX = 10000;
-                    MinZ = 2000;
-                    MaxZ = 10000;
-                break;
+        private static int _world;
+        private static int _zoneNumber = 256;
+        private static int _zoneNumberLast = -1;
 
-                case (World)2: //Odus   4000.0f, 2000.0f, 8000.0f, 10000.0f
-                    MinX = 40000;
-                    MaxX = 20000;
-                    MinZ = 12000;
-                    MaxZ = 12000;
-                break;
+        private static Dictionary<string, IntPtr> detourInstances = new Dictionary<string, IntPtr>();
+        private static Dictionary<string, Stopwatch> zoneTimers = new Dictionary<string, Stopwatch>();
 
-                case(World)3: //Lava Storm  4000.0f, 4000.0f, 4000.0f, 2000.0f
-                    MinX = 4000;
-                    MaxX = 8000;
-                    MinZ = 4000;
-                    MaxZ = 6000;
-                break;
+        private static string zoneIdentifier = "";
+        private static string currentZoneIdentifier = "";
 
-                case (World)4: //Plane of Sky   4000.0f, 4000.0f, 2000.0f, 4000.0f
-                    MinX = 4000;
-                    MaxX = 6000;
-                    MinZ = 4000;
-                    MaxZ = 8000;
-                break;
+        public static int GetPlayerZone(World world, float X, float Z)
+        {
+            _world = (int)world;
+            Point position = new Point((int)X, (int)Z);
+            Rectangle[] areas = Worlds[_world];
+            int zoneOffset = 0;
 
-                case (World)5: //Secrets    4000.0f, 2000.0f, 2000.0f, 6000.0f
-                    MinX = 4000;
-                    MaxX = 6000;
-                    MinZ = 2000;
-                    MaxZ = 8000;
-                break;
+            switch (_world)
+            {
+                case 0: // Tunaria
+                    foreach (Rectangle area in areas)
+                    {
+                        if (area.Contains(position))
+                        {
+                            int areaIndex = Array.IndexOf(areas, area);
+                            zoneOffset = GetZoneOffsetForTunaria(areaIndex);
+                            break;
+                        }
+                    }
+                    break;
+                case 1: // RatheMountains
+                    zoneOffset = 2;
+                    break;
+                case 2: // Odus
+                    zoneOffset = 0;
+                    break;
+                case 3: // LavaStorm
+                    zoneOffset = 0;
+                    break;
+                case 4: // Plane of Sky
+                    zoneOffset = 0;
+                    break;
+                case 5: // Secrets
+                    foreach (Rectangle area in areas)
+                    {
+                        if (area.Contains(position))
+                        {
+                            int areaIndex = Array.IndexOf(areas, area);
+                            zoneOffset = areaIndex;
+                            break;
+                        }
+                    }
+                    break;
             }
 
-            ZonesPerRow = (MaxX - MinX) / ZoneWidth + 1;
-            if (playerX >= MinX && playerX <= MaxX && playerZ >= MinZ && playerZ <= MaxZ)
+            foreach (Rectangle area in areas)
             {
-                int zoneX = (playerX - MinX) / ZoneWidth;
-                int zoneY = (playerZ - MinZ) / ZoneHeight;
-
-                // Calculate the zone based on X and Y coordinates
-                ZoneIndex = (byte)(zoneX + zoneY * ZonesPerRow - 5);
-
-                // Check if the ZoneIndex changed from the previous value
-                if (ZoneIndex != previousZoneIndex)
+                if (area.Contains(position))
                 {
-                    // Unload the previous NavMesh if it exists
-                    UnloadNavMesh();
+                    int xIndex = (position.X - area.Left) / 2000;
+                    int zIndex = (position.Y - area.Top) / 2000;
 
-                    // Store the Task representing the loading process
-                    Task loadingTask = LoadNavMeshAsync(world, ZoneIndex);
+                    int columns = area.Width / 2000;
 
-                    // Wait for the loading task to complete
-                    loadingTask.Wait();
-
-                    // Update the previousZoneIndex to the new value
-                    previousZoneIndex = ZoneIndex;
-
+                    _zoneNumber = xIndex + zIndex * columns + zoneOffset;
+                    return _zoneNumber;
                 }
-
-                return ZoneIndex;
             }
-
-            // Return an invalid zone value if the player is outside the game world
-            return 255;
-        }
-        public static async Task LoadNavMeshAsync(World world, byte ZoneIndex)
-        {
-            await Task.Run(() => LoadNavMesh(world, ZoneIndex));
+            return -1;
         }
 
-        public static async Task LoadNavMesh(World world, byte ZoneIndex)
-        {
-            if (ZoneIndex == 87 || ZoneIndex == 100) // Check if the ZoneIndex requires loading a new mesh
+        public static void LoadMesh()
+        {            
+            // Generate a unique identifier for the zone (world + zone number)
+            zoneIdentifier = $"{_world}_{_zoneNumber}";
+
+            // Check if the detour instance for this zone is already loaded
+            if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr existingDetourPtr))
             {
-                string path = string.Format(@"C:\Users\bsekinger\Source\Repos\EQOAGameServer\NavMesh-{0}\{1}.navmesh", world, ZoneIndex);
-                byte[] @is = Loader.ToBytes(path);
-                using var ms = new MemoryStream(@is);
-                using var bris = new BinaryReader(ms);
-                mesh = reader.Read(bris, 6);
-
-                if (mesh != null)
+                // Detour instance already loaded, check if timer exists
+                if (zoneTimers.TryGetValue(zoneIdentifier, out Stopwatch tmr))
                 {
-                    Console.WriteLine("Loaded Navmesh for world {0} Zone {1}.", world, ZoneIndex);
+                    // Timer exists. Restart timer.
+                    tmr.Restart();
                 }
-                
             }
             else
             {
-                mesh = null; // Set the mesh to null if ZoneIndex doesn't require loading a new mesh
-                Console.WriteLine("Cannot load navmesh. Zone mesh hasn't been built yet!.");
+                // If the detour instance doesn't exist, load it
+                void* detourPtr = allocDetour();
+                if (detourPtr == null)
+                {
+                    //Console.WriteLine("Detour allocation failed!");
+                }
+                else
+                {
+                    //Console.WriteLine("Detour allocation success!");
+                    string filePath = @"C:\Users\bseki\source\repos\EQOAGameServer\ReturnHome\EQOAProto-C-Sharp\Meshes\" + _world + @"\" + _zoneNumber + @".bin";
+                    uint result = load(detourPtr, filePath);
+                    if (result == 0)
+                    {
+                        //Console.WriteLine("World: " + _world + " Zone: " + _zoneNumber + " Load failed!");
+                        freeDetour(detourPtr);
+                        //Console.WriteLine("Detour allocation removed!");
+                    }
+                    else
+                    {
+                        Console.WriteLine("World: " + _world + " Zone: " + _zoneNumber + " Load successful!");
+                        // Store the detour instance in the dictionary
+                        detourInstances[zoneIdentifier] = new IntPtr(detourPtr);
+                    }
+                }
+
+                // Check if the zone has a timer
+                if (!zoneTimers.TryGetValue(zoneIdentifier, out Stopwatch timer))
+                {
+                    // If not, create a new timer and start it
+                    timer = new Stopwatch();
+                    timer.Start();
+                    zoneTimers[zoneIdentifier] = timer;
+                    Console.WriteLine("Timer started/loaded for zone identifier: " + zoneIdentifier);
+                }
             }
         }
 
-        public static void UnloadNavMesh()
+        static int GetZoneOffsetForTunaria(int areaIndex)
         {
-            // Add code here to unload the previous navmesh, if needed
-            // For example, you can set 'mesh' to null to release the previous navmesh from memory
-            mesh = null;
-            Console.WriteLine("Unloaded previous Navmesh.");
+            int zoneOffset = 0;
+
+            switch (areaIndex)
+            {
+                case 1: // Area 2
+                    zoneOffset = 8;
+                    break;
+                case 2: // Area 3
+                    zoneOffset = 125;
+                    break;
+                case 3: // Area 4
+                    zoneOffset = 127;
+                    break;
+            }
+
+            return zoneOffset;
+        }        
+
+        public static void UnloadMesh()
+        {
+            // Generate a unique identifier for the zone (world + zone number)
+            currentZoneIdentifier = $"{_world}_{_zoneNumber}";
+
+            // Iterate through all loaded detour instances
+            foreach (string zoneIdentifier in detourInstances.Keys.ToList())
+            {
+                if (zoneIdentifier != currentZoneIdentifier)
+                {
+                    // Check if the zone has a timer
+                    if (zoneTimers.TryGetValue(zoneIdentifier, out Stopwatch timer))
+                    {
+                        // Check if the timer has exceeded 10 seconds
+                        if (timer.Elapsed.TotalSeconds > 10)
+                        {
+                            // Unload the detour instance and remove it from dictionaries
+                            UnloadDetourInstance(zoneIdentifier);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void UnloadDetourInstance(string zoneIdentifier)
+        {
+            if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr detourPtr))
+            {
+                freeDetour((void*)detourPtr);
+                detourInstances.Remove(zoneIdentifier);
+                zoneTimers.Remove(zoneIdentifier);
+                Console.WriteLine("Detour instance for " + zoneIdentifier + " unloaded.");
+            }
+        }
+
+        public static List<Vector3> path(int world, int zone, Vector3 startPosition, Vector3 endPosition)
+        {
+            Vector3 startPt = startPosition;
+            Vector3 endPt = endPosition;
+
+            // Generate a unique identifier for the zone (world + zone number)
+            string ZoneIdentifier = $"{_world}_{_zoneNumber}";
+
+            if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr detourPtr))
+            {
+                Span<float> strPathArray = stackalloc float[48];
+                fixed (float* strPathPtr = strPathArray)
+
+                {
+                    uint pathCount = find_path((void*)detourPtr, &startPt, &endPt, strPathPtr);
+                    if (pathCount > 0)
+                    {
+                        List<Vector3> pathPoints = new List<Vector3>();
+                        for (int i = 0; i < pathCount * 3; i += 3)
+                        {
+                            Vector3 point = new Vector3(strPathArray[i], strPathArray[i + 1], strPathArray[i + 2]);
+                            pathPoints.Add(point);
+                        }
+
+                        return pathPoints;
+                    }                    
+                }            
+            }
+
+            Console.WriteLine("No path found.");
+            return null;
+        }
+
+        public static List<Vector3> roam(int world, int zone, Vector3 startPosition)
+        {
+            Vector3 startPt = startPosition;
+            List<Vector3> pathPoints = new List<Vector3>();
+
+            // Generate a unique identifier for the zone (world + zone number)
+            string ZoneIdentifier = $"{_world}_{_zoneNumber}";
+
+            if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr detourPtr))
+            {
+                Span<float> strPathArray2 = stackalloc float[48];
+                fixed (float* strPathPtr2 = strPathArray2)
+                {
+                    uint pathCount = random_roam((void*)detourPtr, &startPt, strPathPtr2);
+                    if (pathCount > 0)
+                    {                        
+                        for (int i = 0; i < pathCount * 3; i += 3)
+                        {
+                            Vector3 point = new Vector3(strPathArray2[i], strPathArray2[i + 1], strPathArray2[i + 2]);
+                            pathPoints.Add(point);
+                        }                        
+                    }                    
+                }
+            }
+            return pathPoints;
         }
     }
 }
+
+
+

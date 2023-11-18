@@ -72,11 +72,11 @@ namespace ReturnHome.Server.EntityObject
         }
 
         public void ObjectUpdateEastWest() => ObjectUpdate.Span[44] = EastToWest;
-
+                
         public void ObjectUpdateLateralMovement() => ObjectUpdate.Span[45] = LateralMovement;
 
         public void ObjectUpdateNorthSouth() => ObjectUpdate.Span[46] = NorthToSouth;
-
+                
         public void ObjectUpdateTurning() => ObjectUpdate.Span[47] = Turning;
 
         public void ObjectUpdateSpinDown() => ObjectUpdate.Span[48] = SpinDown;
@@ -153,7 +153,7 @@ namespace ReturnHome.Server.EntityObject
         public void ObjectUpdateFaceOption() => ObjectUpdate.Span[147] = (byte)FaceOption;
 
         public void ObjectUpdateRobe() => ObjectUpdate.Span[148] = (byte)Robe;
-
+        
         public void ObjectUpdateName()
         {
             Span<byte> span3 = ObjectUpdate.Span;

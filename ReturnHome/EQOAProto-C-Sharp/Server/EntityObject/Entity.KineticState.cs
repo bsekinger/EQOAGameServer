@@ -15,7 +15,7 @@ namespace ReturnHome.Server.EntityObject
     {
         private World _world;
 
-        public int Zone;
+        public int zone = -1;
         public float x;
         public float y;
         public float z;
@@ -269,10 +269,18 @@ namespace ReturnHome.Server.EntityObject
 
         public void UpdateZone(World world, float X, float Z)
         {
-            Zone = NavMeshManager.GetPlayerZone(world, X, Z);
+            zone = NavMeshManager.GetPlayerZone(world, X, Z);         
         }
 
+        public void UpdateMesh()
+        {
+            NavMeshManager.LoadMesh();
+        }
 
+        public void UnloadMesh()
+        {
+            NavMeshManager.UnloadMesh();
+        }
 
         public void UpdateFacing(byte facing, byte turning)
         {

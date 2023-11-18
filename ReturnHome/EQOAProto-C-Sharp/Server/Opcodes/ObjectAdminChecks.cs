@@ -3,7 +3,13 @@ using ReturnHome.Server.Managers;
 using ReturnHome.Server.Network;
 using ReturnHome.Server.Opcodes.Messages.Server;
 using ReturnHome.Server.EntityObject.Stats;
-using Z.EntityFramework.Plus;
+using System.Collections.Generic;
+using System;
+using System.Numerics;
+using DotRecast.Core;
+using System.Threading;
+using System.Security.Policy;
+using System.Threading.Tasks;
 
 namespace ReturnHome.Server.Opcodes.Chat
 {
@@ -32,6 +38,10 @@ namespace ReturnHome.Server.Opcodes.Chat
                     case "Zone":
                         message = $"Map: {MySession.MyCharacter.map.Name}";
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
+                        break;
+
+                    case "Tele":
+                        ServerTeleportPlayer.TeleportPlayer(MySession, World.LavaStorm, 5085f, 0.1875f, 5281.94f, -2.40847f);
                         break;
 
                     case "Lava":
@@ -207,6 +217,36 @@ namespace ReturnHome.Server.Opcodes.Chat
                     case "currenthp":
                         message = $"Changing character: {c.CharName}, {changes[1]} to {changes[2]}";
                         c.CurrentHP = int.Parse(changes[2]);
+                        ChatMessage.GenerateClientSpecificChat(MySession, message);
+                        break;
+
+                    case "patrol":
+                        if (c.RoamType == 1)
+                        {                            
+                            NPCMovement npcMovement = new NPCMovement();
+
+                            int world = (int)MySession.MyCharacter.World;
+                            int zone = MySession.MyCharacter.zone;
+                            
+                            Task.Run(async () => await npcMovement.npcPatrolAsync(world, zone, c));                                                                                   
+                        }
+                        else
+                        {
+                            message = $"Character: {c.CharName}, is not defined as a roamer.";
+                            ChatMessage.GenerateClientSpecificChat(MySession, message);
+                        }                        
+                        break;
+
+                    case "chase":
+                        NPCMovement npcMovement2 = new NPCMovement();
+                        Entity a = MySession.MyCharacter;
+                        int world2 = (int)MySession.MyCharacter.World;
+                        int zone2 = MySession.MyCharacter.zone;
+                        npcMovement2.npcChase(world2, zone2, a, c);
+                        break;
+
+                    case "coords":
+                        message = $"X: " + c.x + ", Y: " + c.y + ", Z: " + c.z;
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 

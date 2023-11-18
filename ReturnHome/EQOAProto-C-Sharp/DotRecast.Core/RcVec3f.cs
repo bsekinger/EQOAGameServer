@@ -308,6 +308,8 @@ namespace DotRecast.Core
             return right * left;
         }
 
+        public static implicit operator RcVec3f((float, float, float) v) => throw new NotImplementedException();
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static RcVec3f Cross(RcVec3f v1, RcVec3f v2)
         {

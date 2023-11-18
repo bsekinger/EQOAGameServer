@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Numerics;
+using DotRecast.Core;
 using ReturnHome.Server.EntityObject;
 using ReturnHome.Server.EntityObject.Items;
 
@@ -93,6 +95,41 @@ namespace ReturnHome.Server.Managers
         public static List<Entity> QueryForAllEntitys()
         {
             return entityList;
+        }
+
+        private static bool IsPointInCircle(Vector3 position, Vector3 center, float radius)
+        {
+            float dx = position.X - center.X;
+            float dy = position.Y - center.Y;
+            float dz = position.Z - center.Z;
+
+            // Calculate the squared distance to avoid a square root operation
+            float squaredDistance = dx * dx + dy * dy + dz * dz;
+
+            return squaredDistance <= radius * radius;
+        }
+
+        public static List<Entity> QueryForAllRoamersWithinRange(Vector3 center)
+        {
+            List<Entity> roamers = new List<Entity>();
+            float radius = 100.0f;
+
+            foreach (Entity c3 in entityList)
+            {
+                Vector3 position = new Vector3();
+                position.X = c3.x;
+                position.Y = c3.y;
+                position.Z = c3.z;
+
+                bool result = IsPointInCircle(position, center, radius);
+                if (result && c3.RoamType == 1)
+                {
+                    roamers.Add(c3);
+                    Console.WriteLine(c3.CharName + ":\t" + c3.x + "\t" + c3.y + "\t" + c3.z);
+                }
+            }
+
+            return roamers;
         }
     }
 }

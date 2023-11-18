@@ -87,8 +87,7 @@ namespace ReturnHome.Server.Network
         //TODO This should get built into somewhere else, eventually
         public void CoordinateUpdate()
         {
-            string message = $"Coordinates: X: {MyCharacter.x} Y: {MyCharacter.y} Z: {MyCharacter.z} F: {MyCharacter.FacingF}";
-
+            string message = $"Coordinates: X: {MyCharacter.x} Y: {MyCharacter.y} Z: {MyCharacter.z} F: {MyCharacter.Facing}";
             ChatMessage.GenerateClientSpecificChat(this, message);
         }
 
