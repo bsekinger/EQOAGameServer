@@ -267,17 +267,17 @@ namespace ReturnHome.Server.EntityObject
             */
         }
 
-        public void UpdateZone(World world, float X, float Z)
+        public void UpdateZone(World world, float X, float Z)   //Added for NavMesh
         {
             zone = NavMeshManager.GetPlayerZone(world, X, Z);         
         }
 
-        public void UpdateMesh()
+        public void UpdateMesh()   //Added for NavMesh
         {
             NavMeshManager.LoadMesh();
         }
 
-        public void UnloadMesh()
+        public void UnloadMesh()   //Added for NavMesh
         {
             NavMeshManager.UnloadMesh();
         }

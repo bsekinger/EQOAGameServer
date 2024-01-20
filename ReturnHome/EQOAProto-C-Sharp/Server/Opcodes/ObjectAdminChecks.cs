@@ -3,12 +3,6 @@ using ReturnHome.Server.Managers;
 using ReturnHome.Server.Network;
 using ReturnHome.Server.Opcodes.Messages.Server;
 using ReturnHome.Server.EntityObject.Stats;
-using System.Collections.Generic;
-using System;
-using System.Numerics;
-using DotRecast.Core;
-using System.Threading;
-using System.Security.Policy;
 using System.Threading.Tasks;
 
 namespace ReturnHome.Server.Opcodes.Chat
@@ -220,15 +214,14 @@ namespace ReturnHome.Server.Opcodes.Chat
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 
-                    case "patrol":
+                    case "roam":        //Added for NPC Movement
                         if (c.RoamType == 1)
-                        {                            
-                            NPCMovement npcMovement = new NPCMovement();
-
+                        { 
                             int world = (int)MySession.MyCharacter.World;
                             int zone = MySession.MyCharacter.zone;
-                            
-                            Task.Run(async () => await npcMovement.npcPatrolAsync(world, zone, c));                                                                                   
+
+                            // Use the shared instance of NPCMovement
+                            Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcRoamAsync(world, zone, c));
                         }
                         else
                         {
@@ -237,12 +230,14 @@ namespace ReturnHome.Server.Opcodes.Chat
                         }                        
                         break;
 
-                    case "chase":
-                        NPCMovement npcMovement2 = new NPCMovement();
+                    case "chase":        //Added for NPC Movement                        
                         Entity a = MySession.MyCharacter;
+
                         int world2 = (int)MySession.MyCharacter.World;
                         int zone2 = MySession.MyCharacter.zone;
-                        npcMovement2.npcChase(world2, zone2, a, c);
+                        c.isChasing = true;
+
+                        Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcChaseAsync(world2, zone2, a, c));
                         break;
 
                     case "coords":

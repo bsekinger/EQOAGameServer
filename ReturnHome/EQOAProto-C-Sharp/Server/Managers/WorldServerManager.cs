@@ -8,11 +8,15 @@ using ReturnHome.Database.SQL;
 using ReturnHome.Server.EntityObject.Actors;
 using ReturnHome.Server.Network.Managers;
 using ReturnHome.Server.EntityObject.Items;
+using ReturnHome.Server.EntityObject;
 
 namespace ReturnHome.Server.Managers
 {
     public static class WorldServer
     {
+        // Initialize a single shared instance of NPCMovement for each type of movement
+        public static NPCMovement sharedNpcMovementRoam = new NPCMovement();        //Added for NPC Movement
+        public static NPCMovement sharedNpcMovementChase = new NPCMovement();       //Added for NPC Movement
 
         private static Stopwatch gameTimer;
         private static int serverTick = 1000 / 10;

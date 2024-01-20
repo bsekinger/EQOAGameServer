@@ -14,8 +14,10 @@ namespace ReturnHome.Server.Managers
 {
     public unsafe partial class NavMeshManager
     {
+        private static readonly object findPathLock = new object();
+        private static readonly object RandomRoamLock = new object();
 
-        const string DllPath = @"C:\Users\bseki\source\repos\EQOAGameServer\DetourWrapper\DetourWrapper.dll";
+        const string DllPath = @"C:\Users\bseki\source\repos\DetourWrapper\x64\Release\DetourWrapper.dll";
         [LibraryImport(DllPath), UnmanagedCallConv]
         public static partial void* allocDetour();
 
@@ -249,19 +251,26 @@ namespace ReturnHome.Server.Managers
 
         public static List<Vector3> path(int world, int zone, Vector3 startPosition, Vector3 endPosition)
         {
-            Vector3 startPt = startPosition;
-            Vector3 endPt = endPosition;
-
-            // Generate a unique identifier for the zone (world + zone number)
-            string ZoneIdentifier = $"{_world}_{_zoneNumber}";
-
-            if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr detourPtr))
+            try
             {
-                Span<float> strPathArray = stackalloc float[48];
-                fixed (float* strPathPtr = strPathArray)
+                Vector3 startPt = startPosition;
+                Vector3 endPt = endPosition;
+                uint pathCount = 0;
 
+                // Generate a unique identifier for the zone (world + zone number)
+                string ZoneIdentifier = $"{world}_{zone}";
+
+                if (detourInstances.TryGetValue(ZoneIdentifier, out IntPtr detourPtr))
                 {
-                    uint pathCount = find_path((void*)detourPtr, &startPt, &endPt, strPathPtr);
+                    Span<float> strPathArray = stackalloc float[48];
+
+                    // Ensure memory safety with fixed block
+                    fixed (float* strPathPtr = strPathArray)
+                    lock (findPathLock)
+                    {
+                        pathCount = find_path((void*)detourPtr, &startPt, &endPt, strPathPtr);
+                    }
+                    
                     if (pathCount > 0)
                     {
                         List<Vector3> pathPoints = new List<Vector3>();
@@ -272,18 +281,27 @@ namespace ReturnHome.Server.Managers
                         }
 
                         return pathPoints;
-                    }                    
-                }            
-            }
+                    }
+                }
 
-            Console.WriteLine("No path found.");
-            return null;
+                Console.WriteLine("No path found.");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                // Log the exception for diagnostics
+                Console.WriteLine($"Error in path finding: {ex.Message}");
+                // Optionally, rethrow the exception if you want the caller to handle it
+                // throw;
+                return null;
+            }
         }
 
-        public static List<Vector3> roam(int world, int zone, Vector3 startPosition)
+         public static List<Vector3> roam(int world, int zone, Vector3 startPosition)
         {
             Vector3 startPt = startPosition;
             List<Vector3> pathPoints = new List<Vector3>();
+            uint pathCount = 0;
 
             // Generate a unique identifier for the zone (world + zone number)
             string ZoneIdentifier = $"{_world}_{_zoneNumber}";
@@ -293,7 +311,11 @@ namespace ReturnHome.Server.Managers
                 Span<float> strPathArray2 = stackalloc float[48];
                 fixed (float* strPathPtr2 = strPathArray2)
                 {
-                    uint pathCount = random_roam((void*)detourPtr, &startPt, strPathPtr2);
+                    lock (RandomRoamLock)
+                    {
+                        pathCount = random_roam((void*)detourPtr, &startPt, strPathPtr2);
+                    }
+
                     if (pathCount > 0)
                     {                        
                         for (int i = 0; i < pathCount * 3; i += 3)

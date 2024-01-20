@@ -1,4 +1,5 @@
 ﻿using System.Configuration;
+using System.Runtime.InteropServices;
 using MySql.Data.MySqlClient;
 
 namespace AuthServer.Account.Database

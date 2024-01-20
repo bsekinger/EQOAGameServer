@@ -294,7 +294,7 @@ namespace ReturnHome.Database.SQL
                     //NPC ID
                     rdr.GetInt32(23),
                     //roamType
-                    rdr.GetInt32(24));
+                    rdr.GetInt32(24));      //Added for NPC Movement
                 //add the created actor to the npcData list
                 npcData.Add(newActor);
 
