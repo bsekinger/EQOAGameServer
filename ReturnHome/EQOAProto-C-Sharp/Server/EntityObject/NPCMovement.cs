@@ -4,21 +4,13 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using ReturnHome.Server.Managers;
+using NLua;
+using System.IO;
+using System.Xml;
 
 
 namespace ReturnHome.Server.EntityObject
 {
-    enum NpcState
-    {
-        Idle,
-        Init,
-        MovingForward,
-        MovingBackward,
-        UpdateFacing,
-        Chasing,
-        Done
-    }
-
     public class NPCMovement
     {
         private readonly object _syncLock = new object();
@@ -31,13 +23,258 @@ namespace ReturnHome.Server.EntityObject
         private readonly Dictionary<Entity, Task> _npcTasksChase = new Dictionary<Entity, Task>();
         private readonly SemaphoreSlim _resourceLockChase = new SemaphoreSlim(1, 1); // Async-compatible lock
 
-        private static float _roamSpeed = 4.0f;
+        private readonly Dictionary<Entity, Vector3> _npcPositionsPatrol = new Dictionary<Entity, Vector3>();
+        private readonly Dictionary<Entity, Task> _npcTasksPatrol = new Dictionary<Entity, Task>();
+        private readonly SemaphoreSlim _resourceLockPatrol = new SemaphoreSlim(1, 1); // Async-compatible lock
+
+        private static float _roamSpeed = 3.0f;
         private static float _chaseSpeed = 10.0f;
+        private static float _returnSpeed = 20.0f;
+
+        public async Task npcPatrolAsync(int world, int zone, Entity npc)
+        {
+            List<Vector3> waypoints = new List<Vector3>();
+            List<int> pauses = new List<int>();
+
+            string npcName = npc.CharName;
+            string scriptName = npcName.Replace(" ", "_") + ".lua";
+            string basePath = AppDomain.CurrentDomain.BaseDirectory;
+            string relativePath = @"Scripts\patrollers\";
+            string filePath = Path.Combine(basePath, relativePath, scriptName);            
+
+            try
+            {
+                using (var lua = new Lua())
+                {
+                    lua.DoFile(filePath);
+                    LuaFunction getWaypointsFunc = lua.GetFunction("getWaypointsForNpc");
+
+                    int npcId = npc.ServerID;
+                    LuaTable waypointsTable = getWaypointsFunc.Call(npcId)[0] as LuaTable;
+
+                    foreach (LuaTable waypointData in waypointsTable.Values)
+                    {
+                        float x = Convert.ToSingle(waypointData["x"]);
+                        float y = Convert.ToSingle(waypointData["y"]);
+                        float z = Convert.ToSingle(waypointData["z"]);
+                        int pause = Convert.ToInt32(waypointData["pause"]);
+
+                        waypoints.Add(new Vector3(x, y, z));
+                        pauses.Add(pause);
+                    }
+                }
+            }
+            catch (NLua.Exceptions.LuaScriptException ex)
+            {
+                Console.WriteLine("LuaScriptException caught: " + ex.Message);
+            }
+
+            Vector3 npcPosition = npc.Position;
+
+            await _resourceLockPatrol.WaitAsync(); // Acquire the async lock to manage resources
+
+            try
+            {
+                _npcPositionsPatrol[npc] = npcPosition; // Maintain a dictionary of NPC positions
+                if (!_npcTasksPatrol.ContainsKey(npc) || _npcTasksPatrol[npc].IsCompleted)
+                {
+                    _npcTasksPatrol[npc] = Task.Run(() => NpcPatrolStateMachineAsync(world, zone, npc, waypoints, pauses)); // Maintain a dictionary of NPC tasks
+                }
+            }
+            finally
+            {
+                _resourceLockPatrol.Release(); // Release the async lock when done
+            }
+
+            // Wait for the specific NPC's task to finish
+            await _npcTasksPatrol[npc];
+
+            await _resourceLockPatrol.WaitAsync(); // Acquire the async lock to manage resources again
+
+            try
+            {
+                _npcTasksPatrol.Remove(npc); // Remove the completed task
+                _npcPositionsPatrol.Remove(npc); // Remove the NPC's position
+            }
+            finally
+            {
+                _resourceLockPatrol.Release(); // Release the async lock when done
+            }
+
+        }
+
+        private async Task NpcPatrolStateMachineAsync(int world, int zone, Entity npc, List<Vector3> waypoints, List<int> pauses)
+        {
+            List<Vector3> path = new List<Vector3>();
+            float MovementSpeed = 0;
+            int patrolState = 0;
+            int waypointIndex = 0;
+            int pathIndex = 0;
+            Vector3 direction = new Vector3();
+            Vector3 newPosition = new Vector3();
+            long patrollastUpdateTime = 0;
+            int patrolDirection = 1; // Direction of movement, 1 for forward, -1 for backward
+
+            // Ensure waypoints and pauses lists are of the same length
+            if (waypoints.Count != pauses.Count)
+            {
+                throw new InvalidOperationException("Waypoints and pauses lists must be of the same length.");
+            }
+
+            while (npc.isPatrolling)
+            {
+                switch (patrolState)
+                {
+                    case 0: // use this case to init the patrol only
+                        waypointIndex = 1;
+                        patrolDirection = 1;
+                        
+                        // update facing
+                        npc.Facing = UpdateFacing(npc.Position, waypoints[waypointIndex]);
+
+                        // Delay
+                        if (pauses[waypointIndex] > 0)
+                        {
+                            await Task.Delay(pauses[waypointIndex]); // Asynchronously wait for the pause duration
+                        }
+
+                        patrolState = 1;
+                        break;
+
+                    case 1:
+                        // Record start time
+                        patrollastUpdateTime = Environment.TickCount;
+                        pathIndex = 1;
+                        // find path to first waypoint
+                        path = NavMeshManager.path(world, zone, npc.Position, waypoints[waypointIndex]);
+                        if (path.Count == 0)
+                        {
+                            Console.WriteLine("Path empty!");
+                            patrolState = 10;
+                            break;
+                        }
+
+                        patrolState = 2;
+                        break;
+
+                    case 2:
+                        // set animation and speed
+                        npc.Animation = 1;
+                        MovementSpeed = _roamSpeed;
+
+                        patrolState = 3;
+                        break;
+
+                    case 3:
+                        // Simluate a 60 fps frame rate
+                        await Task.Delay(16);
+
+                        patrolState = 4;
+                        break;
+
+                    case 4:
+                        // Calculate direction vector
+                        direction = Vector3.Normalize(path[pathIndex] - npc.Position);
+
+                        // update facing
+                        npc.Facing = UpdateFacing(npc.Position, waypoints[waypointIndex]);
+
+                        patrolState = 5;
+                        break;
+
+                    case 5:
+                        // Calculate the elapsed time since the last frame
+                        long currentTime = Environment.TickCount;
+                        long deltaTime = currentTime - patrollastUpdateTime;
+
+                        // Calculate the new position based on the elapsed time
+                        float elapsedSeconds = deltaTime / 1000.0f;
+                        newPosition = npc.Position + direction * MovementSpeed * elapsedSeconds;
+
+                        // Update the lastUpdateTime
+                        patrollastUpdateTime = currentTime;
+
+                        patrolState = 6;
+                        break;
+
+                    case 6:
+                        // Update npc position
+                        npc.Position = newPosition;
+
+                        patrolState = 7;
+                        break;
+
+                    case 7:
+                        //Check distance to target if moving forward
+                        float distance = Vector3.Distance(path[pathIndex], npc.Position);
+
+                        if (distance < 1.0)
+                        {
+                            // increment the path index
+                            pathIndex++;
+                            if (pathIndex >= path.Count)
+                            {
+                                pathIndex = path.Count;
+                                patrolState = 8;
+                            }
+                            else patrolState = 3;                            
+                        }
+                        else
+                        {
+                            patrolState = 3;
+                        }
+                        
+                        break;
+
+                    case 8:
+                        // set animation and speed
+                        npc.Animation = 0;
+                        MovementSpeed = 0;
+
+                        // Delay
+                        if (pauses[waypointIndex] > 0)
+                        {
+                            await Task.Delay(pauses[waypointIndex]); // Asynchronously wait for the pause duration
+                        }
+
+                        // check if target is the last patrol point or starting point
+                        if (waypointIndex == waypoints.Count - 1)
+                        {
+                            //set patrol direction to backwards
+                            patrolDirection = -1;
+
+                            // increment/decrement targetIndex based on movement direction
+                            waypointIndex += patrolDirection;
+                            patrolState = 1;
+                        }                       
+                        else if (waypointIndex == 0)
+                        {
+                            patrolState = 0;
+                        }
+                        else
+                        {
+                            // increment/decrement targetIndex based on movement direction
+                            waypointIndex += patrolDirection;
+                            patrolState = 1;                            
+                        }
+
+                        break;
+
+                    case 10:
+
+                        npc.Animation = 0;
+                        MovementSpeed = 0;
+
+                        npc.isPatrolling = false;
+                        patrolState = 0;
+                        break;
+                }
+            }
+        }
 
         public async Task npcRoamAsync(int world, int zone, Entity npc)
         {
-            Vector3 npcPosition = npc.Position;
-            List<Vector3> path = NavMeshManager.roam(world, zone, npcPosition);
+            Vector3 npcPosition = npc.Position;            
 
             await _resourceLockRoam.WaitAsync(); // Acquire the async lock to manage resources
 
@@ -46,7 +283,7 @@ namespace ReturnHome.Server.EntityObject
                 _npcPositionsRoam[npc] = npcPosition; // Maintain a dictionary of NPC positions
                 if (!_npcTasksRoam.ContainsKey(npc) || _npcTasksRoam[npc].IsCompleted)
                 {
-                    _npcTasksRoam[npc] = Task.Run(() => NpcRoamStateMachineAsync(path, npc)); // Maintain a dictionary of NPC tasks
+                    _npcTasksRoam[npc] = Task.Run(() => NpcRoamStateMachineAsync(world, zone, npc)); // Maintain a dictionary of NPC tasks
                 }
             }
             finally
@@ -69,104 +306,144 @@ namespace ReturnHome.Server.EntityObject
                 _resourceLockRoam.Release(); // Release the async lock when done
             }
         }
-         private async Task NpcRoamStateMachineAsync(List<Vector3> path, Entity npc)
+         private async Task NpcRoamStateMachineAsync(int world, int zone, Entity npc)
         {
-            int currentIndex = 0;
-            float t = 0f; // Parameter for interpolation
-            int direction = 1; // Direction of movement, 1 for forward, -1 for backward
+            List<Vector3> path = new List<Vector3>();
+            float MovementSpeed = 0;
+            int roamState = 0;
+            int targetIndex = 1;
+            Vector3 direction = new Vector3();
+            Vector3 npcPosition = new Vector3();
+            Vector3 newPosition = new Vector3();
+            long roamlastUpdateTime = 0;
+            int roamDirection = 1; // Direction of movement, 1 for forward, -1 for backward
 
-            NpcState state = NpcState.Init;
-
-            while (state != NpcState.Done)
+            while (npc.isRoaming)
             {
-                switch (state)
+                switch (roamState)
                 {
-                    case NpcState.Idle:
-                        npc.Animation = 0;
+                    case 0:
+                        // Read npc position
+                        npcPosition = npc.Position;
+
+                        roamState = 1;
                         break;
 
-                    case NpcState.Init:
-                        t = 0f;
-                        state = NpcState.UpdateFacing;
+                    case 1:
+                        // Record start time
+                        roamlastUpdateTime = Environment.TickCount;
+
+                        // Get the path
+                        path = NavMeshManager.roam(world, zone, npcPosition);
+                        if (path.Count == 0)
+                        {
+                            Console.WriteLine("Path empty!");
+                            roamState = 10;
+                            break;
+                        }
+                        
+                        roamState = 2;
                         break;
 
-                    case NpcState.UpdateFacing:
+                    case 2:
+                        // Set animation and speed
+                        npc.Animation = 1;                      
+                        MovementSpeed = _roamSpeed;
+
+                        // Set index to the first point in the path
+                        targetIndex = 1;
+
+                        // Set roaming direction to forward (1)
+                        roamDirection = 1;
+
+                        roamState = 3;
+                        break;                        
+
+                    case 3:
+                        // Simluate a 60 fps frame rate
+                        await Task.Delay(16);
+
+                        roamState = 4;
+                        break;                        
+
+                    case 4:
+                        // Calculate direction vector
+                        direction = Vector3.Normalize(path[targetIndex] - npc.Position);
+                        //Console.WriteLine($"direction: {direction.ToString()}");
+
                         // Call updateFacing function before starting to move                        
-                        if (direction == 1)
+                        if (roamDirection == 1)
                         {
-                            npc.Facing = UpdateFacing(path[currentIndex], path[currentIndex + 1]);
-                            state = NpcState.MovingForward;
+                            npc.Facing = UpdateFacing(npc.Position, path[targetIndex]);
+                            //Console.WriteLine($"facing: {npc.Facing}");
+                            roamState = 5;
                         }
-                        if (direction == -1)
+                        if (roamDirection == -1)
                         {
-                            npc.Facing = UpdateFacing(path[currentIndex], path[currentIndex - 1]);
-                            state = NpcState.MovingBackward;
+                            npc.Facing = UpdateFacing(npc.Position, path[targetIndex]);
+                            roamState = 5;
                         }
-                        //Console.WriteLine($"NPC updating facing to: " + npc.Facing);
+
+                        break;                        
+
+                    case 5:
+                        // Calculate the elapsed time since the last frame
+                        long currentTime = Environment.TickCount;
+                        long deltaTime = currentTime - roamlastUpdateTime;
+                        // Console.WriteLine($"deltaTime: {deltaTime}");
+
+                        // Calculate the new position based on the elapsed time
+                        float elapsedSeconds = deltaTime / 1000.0f;
+                        newPosition = npc.Position + direction * MovementSpeed * elapsedSeconds;
+                        // Console.WriteLine($"newPosition: {newPosition.ToString()}");
+
+                        // Update the lastUpdateTime
+                        roamlastUpdateTime = currentTime;
+
+                        roamState = 6;
                         break;
 
-                    case NpcState.MovingForward:
-                        // Set movement speed
-                        float movementSpeed = _roamSpeed;
-                        npc.Animation = 1;
+                    case 6:
+                        // Update npc position
+                        npc.Position = newPosition;
 
-                        // Call the Smoothstep function to interpolate the NPC's position
-                        Vector3 smoothstepValue = Smoothstep(path[currentIndex], path[currentIndex + 1], ref t, movementSpeed * 0.040f);
-                        npc.Position = smoothstepValue;
-                        
-                        //Console.WriteLine($"NPC Position: {npc.Position.ToString()}");
+                        roamState = 7;
+                        break;
 
-                        // Check if the interpolation is complete for the current segment
-                        if (t >= 1.0f)
+                    case 7:
+                        //Check distance to target if moving forward
+                        float distance = Vector3.Distance(path[targetIndex], npc.Position);
+                        //Console.WriteLine($"distance remaining: {distance}");
+
+                        if (distance < 1.0)
                         {
-                            //Console.WriteLine("Reached end of path");
-                            currentIndex += direction; // Move to the next segment of the path
-                            t = 0f; // Reset the interpolation parameter
+                            targetIndex += roamDirection;
 
-                            // Check if the NPC has reached the end of the path
-                            if (currentIndex >= path.Count - 1)
+                            if (targetIndex >= path.Count)
                             {
-                                direction = -1; // Change direction to move backward
-                                state = NpcState.UpdateFacing;
+                                targetIndex = path.Count - 2; // Set to the last valid index
+                                roamDirection = -1; // Start moving backward
+                            }
+                            else if (targetIndex <= 0)
+                            {
+                                targetIndex = 1; // Set to the first valid index
+                                roamDirection = 1; // Start moving forward
                             }
                         }
+                              
+                        roamState = 3;
                         break;
 
-                    case NpcState.MovingBackward:
-                        // Set movement speed
-                        npc.Animation = 1;
-                        movementSpeed = _roamSpeed;
+                    case 10:
 
-                        // Call the Smoothstep function to interpolate the NPC's position backward
-                        Vector3 smoothstepValueBackward = Smoothstep(path[currentIndex], path[currentIndex - 1], ref t, movementSpeed * 0.040f);
-                        npc.Position = smoothstepValueBackward;
-                        
-                        //Console.WriteLine($"NPC Poition (Backward): {npc.Position.ToString()}");
-                        //Console.WriteLine($"Index: {currentIndex}");
-
-                        // Check if the interpolation is complete for the current segment
-                        if (t >= 1.0f)
-                        {
-                            //Console.WriteLine("Reached beginning of path");
-                            currentIndex += direction; // Move to the previous segment of the path
-                            t = 0f; // Reset the interpolation parameter
-
-                            // Check if the NPC has reached the starting point of the path
-                            if (currentIndex <= 0)
-                            {
-                                direction = 1; // Change direction to move forward
-                                state = NpcState.UpdateFacing;
-                            }
-                        }
-                        break;
-
-                    case NpcState.Done:
-                        // When an NPC is done, exit the loop.
-                        break;
+                        npc.Animation = 0;
+                        MovementSpeed = 0;
+                  
+                        npc.isRoaming = false;
+                        roamState = 0;
+                        break;                        
                 }
-
-                // Simulate frame time asynchronously using Task.Delay
-                await Task.Delay(16);
+                //Console.WriteLine($"roamState: {roamState}");
             }
         }
 
@@ -209,29 +486,30 @@ namespace ReturnHome.Server.EntityObject
             }
         }
 
-        public async Task npcChaseStateMachineAsync(int world, int zone, Entity player, Entity npc)
+        private async Task npcChaseStateMachineAsync(int world, int zone, Entity player, Entity npc)
         {
             List<Vector3> path = new List<Vector3>();
             float movementSpeed = 0;
+            float chaseDistance = 80.0f;
             int chaseState = 0;
             int targetIndex = 1;
             long lastUpdateTime = 0;
             Vector3 direction = new Vector3();
             Vector3 newPosition = new Vector3();
             object timerLock = new object();
+            Vector3 velocity = new Vector3();
 
             System.Timers.Timer pathUpdateTimer = new System.Timers.Timer(200);
             CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
 
-            //Console.WriteLine($"Made it to npcChaseStateMachineAsync with: {npc.ServerID}");
+            Vector3 originalPosition = npc.Position; // Store the original position of the NPC
+            byte originalFacing = npc.Facing;
 
             while (npc.isChasing)
             {
-                //Console.WriteLine($"Chasing State: {chaseState} with {npc.ServerID}");
                 switch (chaseState)
                 {
                     case 0:
-                        // Read player and npc positions
                         Vector3 npcPos = npc.Position;
                         Vector3 playerPos = player.Position;
 
@@ -239,55 +517,75 @@ namespace ReturnHome.Server.EntityObject
                         break;
 
                     case 1:
+                        // Flag to indicate if the first path has been received
+                        bool firstPathReceived = false;
+
                         // Timer to request a new path
                         lock (timerLock)
-                        {                            
+                        {
                             pathUpdateTimer.Elapsed += (sender, args) =>
                             {
-                                var updatedPath = OnPathUpdate(world, zone, npc.Position, player.Position, ref chaseState);
-                                if (updatedPath != null)
+                                var updatedPath = OnPathUpdate(world, zone, npc.Position, player.Position);
+                                if (updatedPath.Count > 0)
                                 {
-                                    path = updatedPath;
+                                    lock (timerLock) // Additional lock for thread safety
+                                    {
+                                        path = updatedPath;
+                                        firstPathReceived = true;
+                                        targetIndex = 0; // Reset to start of the new path
+                                    }
+                                }
+                                else
+                                {
+                                    // Handle no path case
+                                    chaseState = 10; // Set chaseState to 10 to stop chasing
                                 }
                             };
                             pathUpdateTimer.AutoReset = true;
                             pathUpdateTimer.Start();
                         }
 
-                        lastUpdateTime = Environment.TickCount; // Record the start time
-
-                        //Call onPathUpdate once manually to get a path
-                        var initialPath = OnPathUpdate(world, zone, npc.Position, player.Position, ref chaseState);
-                        if (initialPath != null)
+                        // Wait for the first path update
+                        while (!firstPathReceived)
                         {
-                            path = initialPath;
+                            await Task.Delay(10); // Adjust the delay as needed
                         }
+
+                        lastUpdateTime = Environment.TickCount; // Record the start time
 
                         // Set animation and speed
                         npc.Animation = 3;
+                        npc.Movement = 1;
+                        npc.VelocityY = 14839;
                         movementSpeed = _chaseSpeed;
 
-                        chaseState = 2;
+                        chaseState = 2; // Proceed to the next state
                         break;
 
                     case 2:
                         // Initialize the index to the first point in the path
-                        targetIndex = 1;
-
+                        targetIndex = 0;
                         chaseState = 3;
                         break;
 
-                    case 3:                        
+                    case 3:
                         // Simulate frame time asynchronously using Task.Delay
                         await Task.Delay(16);
-
                         chaseState = 4;
                         break;
 
                     case 4:
-                        if (path == null)
+                        // Check for no path or targetIndex exceeds path count
+                        if (path is null || path.Count == 0 || targetIndex >= path.Count)
                         {
-                            chaseState = 10;
+                            chaseState = 10; // Stop if the path is empty or finished
+                            break;
+                        }
+
+                        // Check if the NPC has moved too far from its original position
+                        if (Vector3.Distance(npc.Position, originalPosition) > chaseDistance)
+                        {
+                            chaseState = 11; // Transition to leashing state
                             break;
                         }
 
@@ -304,11 +602,14 @@ namespace ReturnHome.Server.EntityObject
                         // Calculate the elapsed time since the last frame
                         long currentTime = Environment.TickCount;
                         long deltaTime = currentTime - lastUpdateTime;
-                        Console.WriteLine($"Delta Time (ms): {deltaTime}");
+                        //Console.WriteLine($"Delta Time (ms): {deltaTime}");
 
                         // Calculate the new position based on the elapsed time
                         float elapsedSeconds = deltaTime / 1000.0f; // Convert to seconds
                         newPosition = npc.Position + direction * movementSpeed * elapsedSeconds;
+
+                        // Calculate velocity
+                        velocity = direction * movementSpeed;
 
                         // Update the last update time
                         lastUpdateTime = currentTime;
@@ -328,47 +629,89 @@ namespace ReturnHome.Server.EntityObject
                         Vector3 npcPosition = npc.Position;
                         Vector3 playerPosition = player.Position;
 
-                        // Check distance between npc and player
-                        float distance = Vector3.Distance(playerPosition, npcPosition);
-                        if (distance < 1.0)
+                        // Check if the NPC has reached the current target point
+                        if (Vector3.Distance(npc.Position, path[targetIndex]) < 1.0)
                         {
-                            chaseState = 10;
-                            break;
+                            targetIndex++; // Move to the next waypoint
                         }
 
                         chaseState = 3;
                         break;
 
                     case 10:
-                        
+
                         pathUpdateTimer.Stop();
                         pathUpdateTimer.Dispose();
                         pathUpdateTimer = null;
-                                               
+
                         npc.Animation = 0;
+                        npc.Movement = 0;
                         movementSpeed = 0;
+
+                        npc.VelocityX = 0;
+                        npc.VelocityY = 0;
+                        npc.VelocityZ = 0;
 
                         // Set npc is chasing to false here
                         npc.isChasing = false;
+                        npc.Position = originalPosition;
+                        npc.Facing = originalFacing;
                         chaseState = 0;
-                        Console.WriteLine("Chasing stopped!");
-                        return;
+                        // Console.WriteLine("Chasing stopped!");
+                        break;
+
+                    case 11:
+                        pathUpdateTimer.Stop();
+                        await NpcLeash(world, zone, originalPosition, npc); // Call the leashing function
+                        npc.Facing = originalFacing;
+                        chaseState = 10; // After leashing, stop and reset
+                        break;
                 }
             }
         }
 
-        private List<Vector3> OnPathUpdate(int world, int zone, Vector3 npcPosition, Vector3 playerPosition, ref int chaseState)
+        private async Task NpcLeash(int world, int zone, Vector3 originalPosition, Entity npc)
+        {
+            int targetIndex = 0;
+            float movementSpeed = _returnSpeed;
+            long lastUpdateTime = Environment.TickCount;
+
+            List<Vector3> path = OnPathUpdate(world, zone, npc.Position, originalPosition);
+            if (path == null || path.Count == 0 || targetIndex >= path.Count)
+            {
+                Console.WriteLine("Failed to find path back to original position.");
+                return; // Exit if no path found
+            }            
+
+            while (Vector3.Distance(npc.Position, originalPosition) > 1.0)
+            {
+                if (targetIndex >= path.Count)
+                {
+                    break; // Exit the loop if the end of the path is reached
+                }
+
+                Vector3 direction = Vector3.Normalize(path[targetIndex] - npc.Position);
+                npc.Facing = UpdateFacing(npc.Position, path[targetIndex]);
+
+                long currentTime = Environment.TickCount;
+                long deltaTime = currentTime - lastUpdateTime;
+                float elapsedSeconds = deltaTime / 1000.0f;
+                Vector3 newPosition = npc.Position + direction * movementSpeed * elapsedSeconds;
+                lastUpdateTime = currentTime;
+                npc.Position = newPosition;
+
+                if (Vector3.Distance(npc.Position, path[targetIndex]) < 1.0)
+                {
+                    targetIndex++; // Move to the next waypoint
+                }
+
+                await Task.Delay(16); // Simulate frame time
+            }
+        }
+
+        private List<Vector3> OnPathUpdate(int world, int zone, Vector3 npcPosition, Vector3 playerPosition)
         {
             List<Vector3> path = NavMeshManager.path(world, zone, npcPosition, playerPosition);
-
-            // Handle no path error here
-            if (path == null)
-            {
-                chaseState = 10;
-            }
-
-            chaseState = 2;
-
             return path;
         }
 
@@ -378,24 +721,7 @@ namespace ReturnHome.Server.EntityObject
         //                                                                                                                                          //
         //------------------------------------------------------------------------------------------------------------------------------------------//
 
-        // Smoothstep function that controls roaming speed
-        private static Vector3 Smoothstep(Vector3 start, Vector3 end, ref float t, float speed)
-        {
-            t = Math.Clamp(t + 0.010f * speed, 0.0f, 1.0f);
-            float smoothstepValueX = Lerp(start.X, end.X, t);
-            float smoothstepValueY = Lerp(start.Y, end.Y, t);
-            float smoothstepValueZ = Lerp(start.Z, end.Z, t);
-            return new Vector3(smoothstepValueX, smoothstepValueY, smoothstepValueZ);
-        }
-
-         // Linear interpolation function for single values
-        private static float Lerp(float start, float end, float t)
-        {
-            t = Math.Clamp(t, 0.0f, 1.0f);
-            return start + t * (end - start);
-        }
-
-        private static byte UpdateFacing(Vector3 start, Vector3 end)
+        public static byte UpdateFacing(Vector3 start, Vector3 end)
         {
             double angle = CalculateAngle(start, end);
             byte facing = TransformToByte(angle);

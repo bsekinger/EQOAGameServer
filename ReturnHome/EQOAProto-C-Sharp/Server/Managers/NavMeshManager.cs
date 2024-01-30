@@ -36,6 +36,9 @@ namespace ReturnHome.Server.Managers
         [LibraryImport(DllPath), UnmanagedCallConv]
         public static partial uint check_los(void* ptr, void* start, void* end, void* range);
 
+        [LibraryImport(DllPath), UnmanagedCallConv]
+        public static partial uint random_point(void* ptr, void* centerPoint, float radius, float* rndPoint);
+
         static readonly Rectangle[][] Worlds =
         {
             // Define rectangles for each world
@@ -251,12 +254,13 @@ namespace ReturnHome.Server.Managers
 
         public static List<Vector3> path(int world, int zone, Vector3 startPosition, Vector3 endPosition)
         {
+            Vector3 startPt = startPosition;
+            Vector3 endPt = endPosition;
+            uint pathCount = 0;
+            List<Vector3> pathPoints = new List<Vector3>();
+
             try
             {
-                Vector3 startPt = startPosition;
-                Vector3 endPt = endPosition;
-                uint pathCount = 0;
-
                 // Generate a unique identifier for the zone (world + zone number)
                 string ZoneIdentifier = $"{world}_{zone}";
 
@@ -270,30 +274,27 @@ namespace ReturnHome.Server.Managers
                     {
                         pathCount = find_path((void*)detourPtr, &startPt, &endPt, strPathPtr);
                     }
-                    
+
                     if (pathCount > 0)
-                    {
-                        List<Vector3> pathPoints = new List<Vector3>();
+                    {                        
                         for (int i = 0; i < pathCount * 3; i += 3)
                         {
                             Vector3 point = new Vector3(strPathArray[i], strPathArray[i + 1], strPathArray[i + 2]);
                             pathPoints.Add(point);
                         }
-
                         return pathPoints;
                     }
                 }
 
                 Console.WriteLine("No path found.");
-                return null;
+                pathCount = 0;
+                return pathPoints;
             }
             catch (Exception ex)
             {
                 // Log the exception for diagnostics
                 Console.WriteLine($"Error in path finding: {ex.Message}");
-                // Optionally, rethrow the exception if you want the caller to handle it
-                // throw;
-                return null;
+                return pathPoints;
             }
         }
 

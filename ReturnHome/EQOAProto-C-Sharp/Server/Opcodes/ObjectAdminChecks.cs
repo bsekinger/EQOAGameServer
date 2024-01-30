@@ -219,6 +219,7 @@ namespace ReturnHome.Server.Opcodes.Chat
                         { 
                             int world = (int)MySession.MyCharacter.World;
                             int zone = MySession.MyCharacter.zone;
+                            c.isRoaming = true;
 
                             // Use the shared instance of NPCMovement
                             Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcRoamAsync(world, zone, c));
@@ -238,6 +239,23 @@ namespace ReturnHome.Server.Opcodes.Chat
                         c.isChasing = true;
 
                         Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcChaseAsync(world2, zone2, a, c));
+                        break;
+
+                    case "patrol":      //Added for NPC Movement
+                        if (c.RoamType == 2)
+                        {
+                            int world3 = (int)MySession.MyCharacter.World;
+                            int zone3 = MySession.MyCharacter.zone;
+                            c.isPatrolling = true;
+
+                            // Use the shared instance of NPCMovement
+                            Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcPatrolAsync(world3, zone3, c));
+                        }
+                        else
+                        {
+                            message = $"Character: {c.CharName}, is not defined as a patroller.";
+                            ChatMessage.GenerateClientSpecificChat(MySession, message);
+                        }
                         break;
 
                     case "coords":

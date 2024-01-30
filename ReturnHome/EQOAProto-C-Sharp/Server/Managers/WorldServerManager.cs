@@ -17,6 +17,7 @@ namespace ReturnHome.Server.Managers
         // Initialize a single shared instance of NPCMovement for each type of movement
         public static NPCMovement sharedNpcMovementRoam = new NPCMovement();        //Added for NPC Movement
         public static NPCMovement sharedNpcMovementChase = new NPCMovement();       //Added for NPC Movement
+        public static NPCMovement sharedNpcMovementPatrol = new NPCMovement();      //Added for NPC Movement
 
         private static Stopwatch gameTimer;
         private static int serverTick = 1000 / 10;

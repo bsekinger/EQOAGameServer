@@ -21,6 +21,7 @@ namespace ReturnHome.Server.EntityObject
         public int RoamType;
         public bool isRoaming = false;  //Added for NPC Movement
         public bool isChasing = false;  //Added for NPC Movement
+        public bool isPatrolling = false; //Added for NPC Movement
         public AIContainer aiContainer;
 
 
