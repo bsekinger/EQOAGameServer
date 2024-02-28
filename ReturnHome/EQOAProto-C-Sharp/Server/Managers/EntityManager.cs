@@ -96,6 +96,19 @@ namespace ReturnHome.Server.Managers
             return entityList;
         }
 
+        public static List<Entity> QueryForAllRoamersByWorldAndZone(int worldId, int zoneId)
+        {
+            List<Entity> filteredEntities = new List<Entity>();
+            foreach (Entity roamer in entityList)
+            {
+                if ((int)roamer.World == worldId && roamer.zone == zoneId && roamer.RoamType == 1)
+                {
+                    filteredEntities.Add(roamer);
+                }
+            }
+            return filteredEntities;
+        }
+
         private static bool IsPointInCircle(Vector3 position, Vector3 center, float radius)
         {
             float dx = position.X - center.X;

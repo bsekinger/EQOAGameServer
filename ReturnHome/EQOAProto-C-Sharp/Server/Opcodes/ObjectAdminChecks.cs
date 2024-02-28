@@ -84,7 +84,7 @@ namespace ReturnHome.Server.Opcodes.Chat
 
                     case "unk2":
                         message = $"Changing character: {c.CharName}, {changes[1]} to {changes[2]}";
-                        c.ObjectUpdateUnknown2(byte.Parse(changes[2]));
+                        //c.ObjectUpdateUnknown2(byte.Parse(changes[2]));
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 
@@ -149,17 +149,31 @@ namespace ReturnHome.Server.Opcodes.Chat
                         break;
 
                     case "ns":
-                        message = $"Changing character: {c.CharName}, {changes[1]} to {changes[2]}";
+                        message = $"Moving character: {c.CharName}, {changes[1]} to {changes[2]}";
                         c.NorthToSouth = byte.Parse(changes[2]);
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 
                     case "ew":
-                        message = $"Changing character: {c.CharName}, {changes[1]} to {changes[2]}";
+                        message = $"Moving character: {c.CharName}, {changes[1]} to {changes[2]}";
                         c.EastToWest = byte.Parse(changes[2]);
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 
+                    case "nw":
+                        message = $"Moving character: {c.CharName}";
+                        c.EastToWest = 5;
+                        c.NorthToSouth = 5;
+                        ChatMessage.GenerateClientSpecificChat(MySession, message);
+                        break;
+
+                    case "stop":
+                        message = $"Stopping character: {c.CharName}";
+                        c.Movement = 0;
+                        c.NorthToSouth = 0;
+                        c.EastToWest = 0;
+                        ChatMessage.GenerateClientSpecificChat(MySession, message);
+                        break;
                     case "lat":
                         message = $"Changing character: {c.CharName}, {changes[1]} to {changes[2]}";
                         c.LateralMovement = byte.Parse(changes[2]);
@@ -192,7 +206,7 @@ namespace ReturnHome.Server.Opcodes.Chat
 
                     case "entity":
                         message = $"Changing character: {c.CharName}, {changes[1]} to {changes[2]}";
-                        c.ObjectUpdateEntity(byte.Parse(changes[2]));
+                        //c.ObjectUpdateEntity(byte.Parse(changes[2]));
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 
@@ -221,8 +235,8 @@ namespace ReturnHome.Server.Opcodes.Chat
                             int zone = MySession.MyCharacter.zone;
                             c.isRoaming = true;
 
-                            // Use the shared instance of NPCMovement
-                            Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcRoamAsync(world, zone, c));
+                            // Use the shared instance of the roamController
+                            _ = WorldServer.npcRoamController.AddNpcAsync(world, zone, c);
                         }
                         else
                         {
@@ -230,7 +244,7 @@ namespace ReturnHome.Server.Opcodes.Chat
                             ChatMessage.GenerateClientSpecificChat(MySession, message);
                         }                        
                         break;
-
+                        
                     case "chase":        //Added for NPC Movement                        
                         Entity a = MySession.MyCharacter;
 
@@ -238,7 +252,9 @@ namespace ReturnHome.Server.Opcodes.Chat
                         int zone2 = MySession.MyCharacter.zone;
                         c.isChasing = true;
 
-                        Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcChaseAsync(world2, zone2, a, c));
+                        // Use the shared instance of the roamController
+                        _ = WorldServer.npcChaseController.AddNpcAsync(world2, zone2, a, c);
+
                         break;
 
                     case "patrol":      //Added for NPC Movement
@@ -249,7 +265,7 @@ namespace ReturnHome.Server.Opcodes.Chat
                             c.isPatrolling = true;
 
                             // Use the shared instance of NPCMovement
-                            Task.Run(async () => await WorldServer.sharedNpcMovementChase.npcPatrolAsync(world3, zone3, c));
+                            _ = WorldServer.npcPatrolController.AddNpcAsync(world3, zone3, c);
                         }
                         else
                         {
@@ -257,6 +273,38 @@ namespace ReturnHome.Server.Opcodes.Chat
                             ChatMessage.GenerateClientSpecificChat(MySession, message);
                         }
                         break;
+
+                    case "stproam":
+                        if (c.RoamType == 1)
+                        {
+                            c.isRoaming = false;
+
+                            // Use the shared instance of the roamController
+                            _ = WorldServer.npcRoamController.RemoveNpcAsync(c);
+                        }
+                        else
+                        {
+                            message = $"Character: {c.CharName}, is not defined as a roamer.";
+                            ChatMessage.GenerateClientSpecificChat(MySession, message);
+                        }
+                        break;
+
+                    case "stpchase":                        
+                        c.isChasing = false;
+
+                        // Use the shared instance of the roamController
+                        _ = WorldServer.npcChaseController.RemoveNpcAsync(c);
+                        
+                        break;
+
+                    case "stppatrol":
+                        c.isPatrolling = false;
+
+                        // Use the shared instance of the roamController
+                        _ = WorldServer.npcPatrolController.RemoveNpcAsync(c);
+
+                        break;
+
 
                     case "coords":
                         message = $"X: " + c.x + ", Y: " + c.y + ", Z: " + c.z;

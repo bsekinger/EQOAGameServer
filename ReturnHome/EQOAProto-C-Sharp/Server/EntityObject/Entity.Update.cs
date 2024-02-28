@@ -11,19 +11,40 @@ namespace ReturnHome.Server.EntityObject
 
         public void ObjectUpdateObjectID() => MemoryMarshal.Write(ObjectUpdate.Span[0..], ref _objectID);
 
-        public void ObjectUpdateEntity(byte temp = 0x82) => ObjectUpdate.Span[4] = temp;
-
         public void ObjectUpdatePosition()
         {
-            Span<byte> temp = ObjectUpdate.Span;
+            // Set 0x82 at span[4]
+            ObjectUpdate.Span[4] = 0x82;
 
-            BinaryPrimitives.WriteInt32BigEndian(temp[10..], (int)(Position.Z * 128.0f));
-            BinaryPrimitives.WriteInt32BigEndian(temp[7..], (int)(Position.Y * 128.0f));
-            BinaryPrimitives.WriteInt32BigEndian(temp[4..], (int)(Position.X * 128.0f));
+            int xInt = (int)(Position.X * 128.0f);
+            int yInt = (int)(Position.Y * 128.0f);
+            int zInt = (int)(Position.Z * 128.0f);
 
-            //Critical to make sure that writing the int's don't override the facing value
-            ObjectUpdateEntity();
+            // Convert each integer to a 3-byte big-endian representation and store in ObjectUpdate.Span
+            WriteInt24BigEndian(ObjectUpdate.Span[5..], xInt);
+            WriteInt24BigEndian(ObjectUpdate.Span[8..], yInt);
+            WriteInt24BigEndian(ObjectUpdate.Span[11..], zInt);
         }
+        private void WriteInt24BigEndian(Span<byte> span, int value)
+        {
+            span[0] = (byte)((value >> 16) & 0xFF);
+            span[1] = (byte)((value >> 8) & 0xFF);
+            span[2] = (byte)(value & 0xFF);
+        }
+
+        //public void ObjectUpdateEntity(byte temp = 0x82) => ObjectUpdate.Span[4] = temp;
+
+        //public void ObjectUpdatePosition()
+        //{
+        //    Span<byte> temp = ObjectUpdate.Span;
+
+        //    BinaryPrimitives.WriteInt32BigEndian(temp[10..], (int)(Position.Z * 128.0f));
+        //    BinaryPrimitives.WriteInt32BigEndian(temp[7..], (int)(Position.Y * 128.0f));
+        //    BinaryPrimitives.WriteInt32BigEndian(temp[4..], (int)(Position.X * 128.0f));
+
+        //    //Critical to make sure that writing the int's don't override the facing value
+        //    ObjectUpdateEntity();
+        //}               
 
         public void ObjectUpdateFacing() => ObjectUpdate.Span[14] = Facing;
 
@@ -72,11 +93,11 @@ namespace ReturnHome.Server.EntityObject
         }
 
         public void ObjectUpdateEastWest() => ObjectUpdate.Span[44] = EastToWest;
-                
+
         public void ObjectUpdateLateralMovement() => ObjectUpdate.Span[45] = LateralMovement;
 
         public void ObjectUpdateNorthSouth() => ObjectUpdate.Span[46] = NorthToSouth;
-                
+
         public void ObjectUpdateTurning() => ObjectUpdate.Span[47] = Turning;
 
         public void ObjectUpdateSpinDown() => ObjectUpdate.Span[48] = SpinDown;
@@ -94,10 +115,10 @@ namespace ReturnHome.Server.EntityObject
             MemoryMarshal.Write(ObjectUpdate.Span[62..], ref temp);
         }
 
-        public void ObjectUpdateUnknown2(byte temp = 0x01)
-        {
-            MemoryMarshal.Write(ObjectUpdate.Span[189..], ref temp);
-        }
+        //public void ObjectUpdateUnknown2(byte temp = 0x01)
+        //{
+        //    MemoryMarshal.Write(ObjectUpdate.Span[189..], ref temp);
+        //}
 
         public void ObjectUpdatePrimary() => MemoryMarshal.Write(ObjectUpdate.Span[66..], ref _primary);
 
@@ -153,7 +174,7 @@ namespace ReturnHome.Server.EntityObject
         public void ObjectUpdateFaceOption() => ObjectUpdate.Span[147] = (byte)FaceOption;
 
         public void ObjectUpdateRobe() => ObjectUpdate.Span[148] = (byte)Robe;
-        
+
         public void ObjectUpdateName()
         {
             Span<byte> span3 = ObjectUpdate.Span;

@@ -6,6 +6,8 @@ using ReturnHome.Utilities;
 using ReturnHome.Server.Managers;
 using ReturnHome.Server.EntityObject.Player;
 using ReturnHome.Server.Opcodes.Messages.Server;
+using System.Diagnostics;
+using System;
 
 namespace ReturnHome.Server.Network.Managers
 {
@@ -190,9 +192,8 @@ namespace ReturnHome.Server.Network.Managers
 
             MapManager.UpdateMaps();
             GroupManager.DistributeGroupUpdates();
-            // The session tick outbound processes pending actions and handles outgoing messages
             Parallel.ForEach(SessionHash, s => s?.TickOutbound());
-			
+            			
             return sessionCount;
         }
     }

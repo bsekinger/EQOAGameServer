@@ -15,7 +15,10 @@ namespace ReturnHome.Server.Managers
     public unsafe partial class NavMeshManager
     {
         private static readonly object findPathLock = new object();
+        private static readonly object findSmoothPointLock = new object();
         private static readonly object RandomRoamLock = new object();
+        private static readonly object RandomPointLock = new object();
+
 
         const string DllPath = @"C:\Users\bseki\source\repos\DetourWrapper\x64\Release\DetourWrapper.dll";
         [LibraryImport(DllPath), UnmanagedCallConv]
@@ -24,14 +27,14 @@ namespace ReturnHome.Server.Managers
         [LibraryImport(DllPath), UnmanagedCallConv]
         public static partial void freeDetour(void* detourPtr);
 
-        [LibraryImport(DllPath), UnmanagedCallConv]        
+        [LibraryImport(DllPath), UnmanagedCallConv]
         public static partial uint load(void* detourPtr, [MarshalAs(UnmanagedType.LPStr)] string filePath);
 
         [LibraryImport(DllPath), UnmanagedCallConv]
-        public static partial uint random_roam(void* ptr, void* start, void* strPath);
+        public static partial uint find_path(void* ptr, void* start, void* end, void* strPath);
 
         [LibraryImport(DllPath), UnmanagedCallConv]
-        public static partial uint find_path(void* ptr, void* start, void* end, void* strPath);
+        public static partial uint find_smoothPath(void* ptr, void* start, void* end, void* strPath);
 
         [LibraryImport(DllPath), UnmanagedCallConv]
         public static partial uint check_los(void* ptr, void* start, void* end, void* range);
@@ -144,7 +147,7 @@ namespace ReturnHome.Server.Managers
         }
 
         public static void LoadMesh()
-        {            
+        {
             // Generate a unique identifier for the zone (world + zone number)
             zoneIdentifier = $"{_world}_{_zoneNumber}";
 
@@ -215,7 +218,7 @@ namespace ReturnHome.Server.Managers
             }
 
             return zoneOffset;
-        }        
+        }
 
         public static void UnloadMesh()
         {
@@ -266,17 +269,17 @@ namespace ReturnHome.Server.Managers
 
                 if (detourInstances.TryGetValue(ZoneIdentifier, out IntPtr detourPtr))
                 {
-                    Span<float> strPathArray = stackalloc float[48];
+                    Span<float> strPathArray = stackalloc float[768];
 
                     // Ensure memory safety with fixed block
                     fixed (float* strPathPtr = strPathArray)
-                    lock (findPathLock)
-                    {
-                        pathCount = find_path((void*)detourPtr, &startPt, &endPt, strPathPtr);
-                    }
+                        lock (findPathLock)
+                        {
+                            pathCount = find_path((void*)detourPtr, &startPt, &endPt, strPathPtr);
+                        }
 
                     if (pathCount > 0)
-                    {                        
+                    {
                         for (int i = 0; i < pathCount * 3; i += 3)
                         {
                             Vector3 point = new Vector3(strPathArray[i], strPathArray[i + 1], strPathArray[i + 2]);
@@ -298,36 +301,85 @@ namespace ReturnHome.Server.Managers
             }
         }
 
-         public static List<Vector3> roam(int world, int zone, Vector3 startPosition)
+        public static List<Vector3> smoothPath(int world, int zone, Vector3 startPosition, Vector3 endPosition)
         {
             Vector3 startPt = startPosition;
-            List<Vector3> pathPoints = new List<Vector3>();
+            Vector3 endPt = endPosition;
             uint pathCount = 0;
+            List<Vector3> pathPoints = new List<Vector3>();
+
+            try
+            {
+                // Generate a unique identifier for the zone (world + zone number)
+                string ZoneIdentifier = $"{world}_{zone}";
+
+                if (detourInstances.TryGetValue(ZoneIdentifier, out IntPtr detourPtr))
+                {
+                    Span<float> smoothPathArray = stackalloc float[6144];
+
+                    // Ensure memory safety with fixed block
+                    fixed (float* smoothPathPtr = smoothPathArray)
+                        lock (findSmoothPointLock)
+                        {
+                            pathCount = find_smoothPath((void*)detourPtr, &startPt, &endPt, smoothPathPtr);
+                        }
+
+                    if (pathCount > 0)
+                    {
+                        for (int i = 0; i < pathCount * 3; i += 3)
+                        {
+                            Vector3 point = new Vector3(smoothPathArray[i], smoothPathArray[i + 1], smoothPathArray[i + 2]);
+                            pathPoints.Add(point);
+                        }
+                        return pathPoints;
+                    }
+                }
+
+                Console.WriteLine("No smooth path found.");
+                pathCount = 0;
+                return pathPoints;
+            }
+            catch (Exception ex)
+            {
+                // Log the exception for diagnostics
+                Console.WriteLine($"Error in path finding: {ex.Message}");
+                return pathPoints;
+            }
+        }
+
+        public static Vector3 point(int world, int zone, Vector3 center, float radius)
+        {
+            uint pointFound = 0;
+            Vector3 centerPt = center;
 
             // Generate a unique identifier for the zone (world + zone number)
             string ZoneIdentifier = $"{_world}_{_zoneNumber}";
 
             if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr detourPtr))
             {
-                Span<float> strPathArray2 = stackalloc float[48];
-                fixed (float* strPathPtr2 = strPathArray2)
+                Span<float> rndPointArray = stackalloc float[3];
+                fixed (float* rndPointPtr = rndPointArray)
                 {
-                    lock (RandomRoamLock)
+                    lock (RandomPointLock)
                     {
-                        pathCount = random_roam((void*)detourPtr, &startPt, strPathPtr2);
-                    }
+                        pointFound = random_point((void*)detourPtr, (float*)&centerPt, radius, rndPointPtr);
+                    }                   
 
-                    if (pathCount > 0)
+                    if (pointFound > 0)
                     {                        
-                        for (int i = 0; i < pathCount * 3; i += 3)
-                        {
-                            Vector3 point = new Vector3(strPathArray2[i], strPathArray2[i + 1], strPathArray2[i + 2]);
-                            pathPoints.Add(point);
-                        }                        
-                    }                    
+                        Vector3 randomPoint = new Vector3(rndPointArray[0], rndPointArray[1], rndPointArray[2]);
+                        // Console.WriteLine($"Random Point found! {randomPoint.ToString()}");
+                        return randomPoint;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"No random point found.");
+                    }
                 }
+
             }
-            return pathPoints;
+
+            return Vector3.Zero;
         }
     }
 }

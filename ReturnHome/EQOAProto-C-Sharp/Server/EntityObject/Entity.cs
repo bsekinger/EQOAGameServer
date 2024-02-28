@@ -132,7 +132,7 @@ namespace ReturnHome.Server.EntityObject
                 BaseMaxStat = 100000;
 
             #endregion
-            ObjectUpdateEntity();
+            //ObjectUpdateEntity();
             ObjectUpdateVanillaColors();
             ObjectUpdateEnd();
             ObjectUpdateNameColor();

@@ -15,9 +15,9 @@ namespace ReturnHome.Server.Managers
     public static class WorldServer
     {
         // Initialize a single shared instance of NPCMovement for each type of movement
-        public static NPCMovement sharedNpcMovementRoam = new NPCMovement();        //Added for NPC Movement
-        public static NPCMovement sharedNpcMovementChase = new NPCMovement();       //Added for NPC Movement
-        public static NPCMovement sharedNpcMovementPatrol = new NPCMovement();      //Added for NPC Movement
+        public static NpcRoamController npcRoamController = new NpcRoamController(); //Added for NPC Movement
+        public static NpcChaseController npcChaseController = new NpcChaseController(); //Added for NPC Movement
+        public static NpcPatrolController npcPatrolController = new NpcPatrolController(); //Added for NPC Movement
 
         private static Stopwatch gameTimer;
         private static int serverTick = 1000 / 10;
@@ -78,7 +78,7 @@ namespace ReturnHome.Server.Managers
                 UpdateWorld();
             });
             thread.Name = "World Manager";
-            thread.Priority = ThreadPriority.AboveNormal;
+            thread.Priority = ThreadPriority.Highest;
             thread.Start();
         }
 
@@ -96,7 +96,7 @@ namespace ReturnHome.Server.Managers
 
                 if (gameTimer.ElapsedMilliseconds > serverTick)
                 {
-                    Console.WriteLine("Server can't keep up");
+                    Console.WriteLine($"Server can't keep up - elapsed time: {gameTimer.ElapsedMilliseconds}");
                 }
 
                 await Task.Delay(Math.Max(0, serverTick - (int)gameTimer.ElapsedMilliseconds));
