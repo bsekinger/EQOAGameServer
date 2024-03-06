@@ -261,8 +261,7 @@ namespace ReturnHome.Server.EntityObject
                     cancellationTokenSource.Cancel();
                     _npcCancellationTokens.Remove(npc);
                 }
-
-                npc.Position = _npcRoamData[npc].OriginalPosition;
+                
                 npc.Animation = 0;
                 npc.VelocityX = 0;
                 npc.VelocityY = 0;

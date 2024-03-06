@@ -301,9 +301,7 @@ namespace ReturnHome.Server.EntityObject
                 }
                 _npcTasks.Remove(npc);
                 _npcPatrolData.Remove(npc);
-
-                // Reset NPC's state to its original position and animation
-                npc.Position = _npcPatrolData[npc].OriginalPosition;
+                               
                 npc.Animation = 0;
                 npc.VelocityX = 0;
                 npc.VelocityY = 0;
