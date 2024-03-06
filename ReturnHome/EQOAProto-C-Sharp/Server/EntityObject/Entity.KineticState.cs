@@ -15,7 +15,6 @@ namespace ReturnHome.Server.EntityObject
     {
         private World _world;
 
-        public int zone = -1;
         public float x;
         public float y;
         public float z;
@@ -265,21 +264,6 @@ namespace ReturnHome.Server.EntityObject
             string message = $"X: {X} Y: {Y} Z: {Z}";
             ChatMessage.GenerateClientSpecificChat(((Character)this).characterSession, message);
             */
-        }
-
-        public void UpdateZone(World world, float X, float Z)   //Added for NavMesh
-        {
-            zone = NavMeshManager.GetPlayerZone(world, X, Z);         
-        }
-
-        public void UpdateMesh()   //Added for NavMesh
-        {
-            NavMeshManager.LoadMesh();
-        }
-
-        public void UnloadMesh()   //Added for NavMesh
-        {
-            NavMeshManager.UnloadMesh();
         }
 
         public void UpdateFacing(byte facing, byte turning)

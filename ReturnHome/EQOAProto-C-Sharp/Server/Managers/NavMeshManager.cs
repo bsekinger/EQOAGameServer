@@ -8,6 +8,7 @@ using System.Drawing;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using ReturnHome.Server.EntityObject;
 
 namespace ReturnHome.Server.Managers
@@ -42,206 +43,132 @@ namespace ReturnHome.Server.Managers
         [LibraryImport(DllPath), UnmanagedCallConv]
         public static partial uint random_point(void* ptr, void* centerPoint, float radius, float* rndPoint);
 
-        static readonly Rectangle[][] Worlds =
-        {
-            // Define rectangles for each world
-            new Rectangle[] // Tunaria = 0
-            {
-                new Rectangle(20000, 0, 8000, 4000), // Area 1
-                new Rectangle(2000, 4000, 26000, 18000), // Area 2
-                new Rectangle(2000, 22000, 4000, 2000), // Area 3
-                new Rectangle(12000, 22000, 16000, 12000) // Area 4
-            },
-            new Rectangle[] // RatheMountains = 1
-            {
-                new Rectangle(2000, 2000, 8000, 8000)
-            },
-            new Rectangle[] // RatheMountains = 2
-            {
-                new Rectangle(2000, 0, 12000, 14000)
-            },
-            new Rectangle[] // LavaStorm Mountains = 3
-            {
-                new Rectangle(4000, 4000, 4000, 2000)
-            },
-            new Rectangle[] // Plane of Sky = 4
-            {
-                new Rectangle(4000, 4000, 2000, 4000)
-            },
-            new Rectangle[] // Secrets = 5
-            {
-                new Rectangle(4000, 2000, 2000, 2000), // Last Home
-                new Rectangle(4000, 6000, 2000, 2000)  // Zoaran Plateau
-            },
-        };
-
-        private static int _world;
-        private static int _zoneNumber = 256;
-        private static int _zoneNumberLast = -1;
-
         private static Dictionary<string, IntPtr> detourInstances = new Dictionary<string, IntPtr>();
         private static Dictionary<string, Stopwatch> zoneTimers = new Dictionary<string, Stopwatch>();
 
-        private static string zoneIdentifier = "";
-        private static string currentZoneIdentifier = "";
-
-        public static int GetPlayerZone(World world, float X, float Z)
+        public static void LoadMeshIfNeeded(int world, int zone)
         {
-            _world = (int)world;
-            Point position = new Point((int)X, (int)Z);
-            Rectangle[] areas = Worlds[_world];
-            int zoneOffset = 0;
+            string zoneIdentifier = $"{world}_{zone}";
 
-            switch (_world)
+            if (!detourInstances.ContainsKey(zoneIdentifier))
             {
-                case 0: // Tunaria
-                    foreach (Rectangle area in areas)
-                    {
-                        if (area.Contains(position))
-                        {
-                            int areaIndex = Array.IndexOf(areas, area);
-                            zoneOffset = GetZoneOffsetForTunaria(areaIndex);
-                            break;
-                        }
-                    }
-                    break;
-                case 1: // RatheMountains
-                    zoneOffset = 2;
-                    break;
-                case 2: // Odus
-                    zoneOffset = 0;
-                    break;
-                case 3: // LavaStorm
-                    zoneOffset = 0;
-                    break;
-                case 4: // Plane of Sky
-                    zoneOffset = 0;
-                    break;
-                case 5: // Secrets
-                    foreach (Rectangle area in areas)
-                    {
-                        if (area.Contains(position))
-                        {
-                            int areaIndex = Array.IndexOf(areas, area);
-                            zoneOffset = areaIndex;
-                            break;
-                        }
-                    }
-                    break;
+                // Load the mesh because it's not already loaded
+                Console.WriteLine($"Player(s) detected in Zone {zone} of World {world}. Loading navmesh...");
+                LoadMesh(world, zone);
             }
 
-            foreach (Rectangle area in areas)
+            // Reset or start the timer for this zone
+            if (!zoneTimers.TryGetValue(zoneIdentifier, out Stopwatch timer))
             {
-                if (area.Contains(position))
-                {
-                    int xIndex = (position.X - area.Left) / 2000;
-                    int zIndex = (position.Y - area.Top) / 2000;
-
-                    int columns = area.Width / 2000;
-
-                    _zoneNumber = xIndex + zIndex * columns + zoneOffset;
-                    return _zoneNumber;
-                }
+                timer = new Stopwatch();
+                zoneTimers[zoneIdentifier] = timer;
             }
-            return -1;
+            timer.Restart(); // Reset the timer whenever activity is detected
         }
 
-        public static void LoadMesh()
+        public static void LoadMesh(int world, int zone)
         {
             // Generate a unique identifier for the zone (world + zone number)
-            zoneIdentifier = $"{_world}_{_zoneNumber}";
+            string zoneIdentifier = $"{world}_{zone}";
 
-            // Check if the detour instance for this zone is already loaded
-            if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr existingDetourPtr))
+            // Only proceed if the detour instance for this zone is not already loaded
+            if (!detourInstances.ContainsKey(zoneIdentifier))
             {
-                // Detour instance already loaded, check if timer exists
-                if (zoneTimers.TryGetValue(zoneIdentifier, out Stopwatch tmr))
+                // Load the detour instance
+                void* detourPtr = allocDetour();
+                if (detourPtr == null)
                 {
-                    // Timer exists. Restart timer.
-                    tmr.Restart();
+                    Console.WriteLine("Detour allocation failed!");
+                }
+                else
+                {
+                    string filePath = $@"C:\Users\bseki\source\repos\EQOAGameServer\ReturnHome\EQOAProto-C-Sharp\Meshes\{world}\{zone}.bin";
+
+                    uint result = load(detourPtr, filePath);
+                    if (result == 0)
+                    {
+                        Console.WriteLine($"Load failed for World: {world}, Zone: {zone}");
+                        freeDetour(detourPtr); // Ensure to free allocated memory on failure
+                    }
+                    else
+                    {
+                        Console.WriteLine($"World: {world}, Zone: {zone} Load successful!");
+                        // Successfully loaded, store the detour instance
+                        detourInstances[zoneIdentifier] = new IntPtr(detourPtr);
+                        // No need to check or create a timer here as it's managed in LoadMeshIfNeeded
+                    }
                 }
             }
             else
             {
-                // If the detour instance doesn't exist, load it
-                void* detourPtr = allocDetour();
-                if (detourPtr == null)
-                {
-                    //Console.WriteLine("Detour allocation failed!");
-                }
-                else
-                {
-                    //Console.WriteLine("Detour allocation success!");
-                    string filePath = @"C:\Users\bseki\source\repos\EQOAGameServer\ReturnHome\EQOAProto-C-Sharp\Meshes\" + _world + @"\" + _zoneNumber + @".bin";
-                    uint result = load(detourPtr, filePath);
-                    if (result == 0)
-                    {
-                        //Console.WriteLine("World: " + _world + " Zone: " + _zoneNumber + " Load failed!");
-                        freeDetour(detourPtr);
-                        //Console.WriteLine("Detour allocation removed!");
-                    }
-                    else
-                    {
-                        Console.WriteLine("World: " + _world + " Zone: " + _zoneNumber + " Load successful!");
-                        // Store the detour instance in the dictionary
-                        detourInstances[zoneIdentifier] = new IntPtr(detourPtr);
-                    }
-                }
-
-                // Check if the zone has a timer
-                if (!zoneTimers.TryGetValue(zoneIdentifier, out Stopwatch timer))
-                {
-                    // If not, create a new timer and start it
-                    timer = new Stopwatch();
-                    timer.Start();
-                    zoneTimers[zoneIdentifier] = timer;
-                    Console.WriteLine("Timer started/loaded for zone identifier: " + zoneIdentifier);
-                }
+                Console.WriteLine($"Detour instance for World: {world}, Zone: {zone} is already loaded.");
             }
         }
 
-        static int GetZoneOffsetForTunaria(int areaIndex)
+        public static async Task MonitorAndUnloadMeshes()
         {
-            int zoneOffset = 0;
-
-            switch (areaIndex)
+            // This method should be called periodically, e.g., every second
+            var zonesToUnload = new List<string>();
+            foreach (var kvp in zoneTimers)
             {
-                case 1: // Area 2
-                    zoneOffset = 8;
-                    break;
-                case 2: // Area 3
-                    zoneOffset = 125;
-                    break;
-                case 3: // Area 4
-                    zoneOffset = 127;
-                    break;
+                if (kvp.Value.Elapsed.TotalSeconds > 20)
+                {
+                    // Identify zones that are ready to be unloaded
+                    zonesToUnload.Add(kvp.Key);
+                }
             }
 
-            return zoneOffset;
+            foreach (var zoneKey in zonesToUnload)
+            {
+                // Parse world and zone identifiers
+                string[] identifiers = zoneKey.Split('_');
+                int world = int.Parse(identifiers[0]);
+                int zone = int.Parse(identifiers[1]);
+
+                // Before unloading the mesh, stop all roamers and patrollers in the zone
+                _ = WorldServer.npcRoamController.RemoveNpcsAsync(world, zone);
+                _ = WorldServer.npcPatrolController.RemoveNpcsAsync(world, zone);
+
+                // Unload the mesh
+                UnloadMesh(world, zone);
+
+                // Remove the zone from zonesWithNpcsStarted to reflect that NPCs are no longer active in this zone
+                ZoneManager.zonesWithNpcsStarted.Remove(zoneKey);
+
+                // Additionally, stop and remove the timer for this zone to prevent future checks
+                zoneTimers[zoneKey].Stop();
+                zoneTimers.Remove(zoneKey);
+            }
         }
 
-        public static void UnloadMesh()
+        public static void UnloadMesh(int world, int zone)
         {
             // Generate a unique identifier for the zone (world + zone number)
-            currentZoneIdentifier = $"{_world}_{_zoneNumber}";
+            string currentZoneIdentifier = $"{world}_{zone}";
 
             // Iterate through all loaded detour instances
             foreach (string zoneIdentifier in detourInstances.Keys.ToList())
             {
-                if (zoneIdentifier != currentZoneIdentifier)
-                {
-                    // Check if the zone has a timer
-                    if (zoneTimers.TryGetValue(zoneIdentifier, out Stopwatch timer))
-                    {
-                        // Check if the timer has exceeded 10 seconds
-                        if (timer.Elapsed.TotalSeconds > 10)
-                        {
-                            // Unload the detour instance and remove it from dictionaries
-                            UnloadDetourInstance(zoneIdentifier);
-                        }
-                    }
+                if (zoneIdentifier == currentZoneIdentifier)
+                {                    
+                    // Unload the detour instance and remove it from dictionaries
+                    UnloadDetourInstance(zoneIdentifier);
                 }
             }
+        }
+
+        public static bool IsDetourInstance(int world, int zone)
+        {
+                // Generate a unique identifier for the zone (world + zone number)
+                string zoneIdentifier = $"{world}_{zone}";
+
+                // Check if the detour instance for this zone is already loaded
+                if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr existingDetourPtr))
+                {
+                    return true;
+                }
+
+                return false;
         }
 
         private static void UnloadDetourInstance(string zoneIdentifier)
@@ -353,7 +280,7 @@ namespace ReturnHome.Server.Managers
             Vector3 centerPt = center;
 
             // Generate a unique identifier for the zone (world + zone number)
-            string ZoneIdentifier = $"{_world}_{_zoneNumber}";
+            string zoneIdentifier = $"{world}_{zone}";
 
             if (detourInstances.TryGetValue(zoneIdentifier, out IntPtr detourPtr))
             {

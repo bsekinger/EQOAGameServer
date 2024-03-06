@@ -101,11 +101,26 @@ namespace ReturnHome.Server.Managers
             List<Entity> filteredEntities = new List<Entity>();
             foreach (Entity roamer in entityList)
             {
-                if ((int)roamer.World == worldId && roamer.zone == zoneId && roamer.RoamType == 1)
+                if ((int)roamer.World == worldId && roamer.Zone == zoneId && roamer.RoamType == 1)                
                 {
                     filteredEntities.Add(roamer);
                 }
             }
+            Console.WriteLine($"Found {filteredEntities.Count} Roamers.");
+            return filteredEntities;
+        }
+
+        public static List<Entity> QueryForAllPatrollersByWorldAndZone(int worldId, int zoneId)
+        {
+            List<Entity> filteredEntities = new List<Entity>();
+            foreach (Entity patroller in entityList)
+            {
+                if ((int)patroller.World == worldId && patroller.Zone == zoneId && patroller.RoamType == 2)
+                {
+                    filteredEntities.Add(patroller);
+                }
+            }
+            Console.WriteLine($"Found {filteredEntities.Count} Patrollers.");
             return filteredEntities;
         }
 

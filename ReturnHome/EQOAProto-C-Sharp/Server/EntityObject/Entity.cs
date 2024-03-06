@@ -19,6 +19,7 @@ namespace ReturnHome.Server.EntityObject
         private EntityType _npcType = 0;
         public int ServerID;
         public int RoamType;
+        public int Zone;
         public bool isRoaming = false;  //Added for NPC Movement
         public bool isChasing = false;  //Added for NPC Movement
         public bool isPatrolling = false; //Added for NPC Movement

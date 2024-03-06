@@ -1,9 +1,10 @@
 ﻿local waypointsByNpcId = {
-    [106] = { -- NPC ID 106 for Guard Filgen in Qeynos
-        { x = 4628.09, y = 57.6562, z = 17221.9, pause = 5000 },
-        { x = 4623.7363, y = 57.65735, z = 17200.729, pause = 5000 },
-        { x = 4645.578, y = 57.65735, z = 17204.01, pause = 0 },
-        { x = 4722.3213, y = 57.65735, z = 17238.523, pause = 5000 },
+    [5842] = { -- NPC ID 106 for Guard Welling in Qeynos
+        { x = 4356.58, y = 57.6562, z = 17268.1, pause = 5000 },
+        { x = 4355.7793, y = 57.65735, z = 17243.69, pause = 0 },
+        { x = 4355.786, y = 57.65735, z = 17223.047, pause = 0 },
+        { x = 4354.6123, y = 57.65735, z = 17199.838, pause = 0 },
+        { x = 4354.747, y = 57.65735, z = 17171.248, pause = 5000 },
     },
 
     [456] = { -- NPC ID 456 is a dummy just to show a second set of waypoints would be implemented

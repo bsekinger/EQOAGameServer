@@ -12,12 +12,12 @@ namespace ReturnHome.Server.EntityObject
 {
     public class NpcRoamController : IDisposable
     {
-        private Dictionary<Entity, (Vector3 OriginalPosition, Vector3 RandomPoint, int RoamDirection)> _npcRoamData = new Dictionary<Entity, (Vector3, Vector3, int)>();
+        private Dictionary<Entity, (int world, int zone, Vector3 OriginalPosition, Vector3 RandomPoint, int RoamDirection)> _npcRoamData = new Dictionary<Entity, (int, int, Vector3, Vector3, int)>();
         private Dictionary<Entity, Task> _npcTasks = new Dictionary<Entity, Task>();
         private SemaphoreSlim _resourceSemaphore = new SemaphoreSlim(1, 1);
 
         private Dictionary<Entity, CancellationTokenSource> _npcCancellationTokens = new Dictionary<Entity, CancellationTokenSource>();
-        private float _roamSpeed = 3.0f; // Default roam speed
+        private float _roamSpeed = 2.0f; // Default roam speed
 
         public NpcRoamController()
         {
@@ -42,7 +42,7 @@ namespace ReturnHome.Server.EntityObject
                 if (!_npcRoamData.ContainsKey(npc))
                 {
                     // Add the npc
-                    _npcRoamData[npc] = (npcPosition, rndPoint, 1);
+                    _npcRoamData[npc] = (world, zone, npcPosition, rndPoint, 1);
 
                     // Check if there's a need to create a new task for the NPC
                     if (!_npcTasks.ContainsKey(npc) || _npcTasks[npc].IsCompleted)
@@ -83,6 +83,9 @@ namespace ReturnHome.Server.EntityObject
             long lastUpdateTime = 0;
             float movementSpeed = 0;
             bool isRoaming = true;
+            sbyte velocityX = 0;
+            sbyte velocityY = 0;
+            sbyte velocityZ = 0;
 
             while (isRoaming && !cancellationToken.IsCancellationRequested)
             {
@@ -133,8 +136,26 @@ namespace ReturnHome.Server.EntityObject
                         long currentTime = Environment.TickCount;
                         long deltaTime = currentTime - lastUpdateTime;
 
+                        // Specify the maximum movement speed
+                        float maxSpeed = 20.0f;
+
+                        // Calculate the normalized movement speed
+                        float normalizedSpeed = movementSpeed / maxSpeed;
+
                         // Calculate the new position based on the elapsed time
                         float elapsedSeconds = deltaTime / 1000.0f;
+
+                        // Calculate the displacement
+                        Vector3 displacement = direction * normalizedSpeed * elapsedSeconds;
+
+                        // Calculate the maximum possible displacement within the given time frame
+                        float maxDisplacement = normalizedSpeed * elapsedSeconds;
+
+                        // Calculate velocity components
+                        velocityX = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.X / maxDisplacement)) * Math.Sign(displacement.X) * normalizedSpeed * sbyte.MaxValue);
+                        velocityY = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Y / maxDisplacement)) * Math.Sign(displacement.Y) * normalizedSpeed * sbyte.MaxValue);
+                        velocityZ = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Z / maxDisplacement)) * Math.Sign(displacement.Z) * normalizedSpeed * sbyte.MaxValue);
+
                         newPosition = npc.Position + direction * movementSpeed * elapsedSeconds;
 
                         // Update the lastUpdateTime
@@ -144,8 +165,11 @@ namespace ReturnHome.Server.EntityObject
                         break;
 
                     case 6:
-                        // Update npc position
+                        // Update npc position and velocity
                         npc.Position = newPosition;
+                        npc.VelocityX = (ushort)velocityX;
+                        npc.VelocityY = (ushort)velocityY;
+                        npc.VelocityZ = (ushort)velocityZ;
 
                         roamState = 7;
                         break;
@@ -156,6 +180,7 @@ namespace ReturnHome.Server.EntityObject
 
                         if (distance < 0.1) // NPC has reached the current waypoint.
                         {
+                            npc.Position = path[targetIndex];
                             // Check if the NPC has reached the end of the path.
                             if (targetIndex >= path.Count - 1)
                             {
@@ -210,7 +235,7 @@ namespace ReturnHome.Server.EntityObject
                 int newRoamDirection = roamData.RoamDirection * -1;
 
                 // Update the dictionary entry for the NPC with the new roam direction.
-                _npcRoamData[npc] = (roamData.OriginalPosition, roamData.RandomPoint, newRoamDirection);
+                _npcRoamData[npc] = (roamData.world, roamData.zone, roamData.OriginalPosition, roamData.RandomPoint, newRoamDirection);
             }
         }
 
@@ -219,7 +244,7 @@ namespace ReturnHome.Server.EntityObject
             if (!_npcRoamData.TryGetValue(npc, out var npcData))
             {
                 Console.WriteLine($"Data for NPC: {npc.CharName} not found.");
-                return new List<Vector3>(); // Return an empty path if NPC data is not found
+                return new List<Vector3>();
             }
 
             List<Vector3> path = NavMeshManager.smoothPath(world, zone, npc.Position, npcData.RandomPoint);
@@ -236,17 +261,72 @@ namespace ReturnHome.Server.EntityObject
                     cancellationTokenSource.Cancel();
                     _npcCancellationTokens.Remove(npc);
                 }
+
+                npc.Position = _npcRoamData[npc].OriginalPosition;
+                npc.Animation = 0;
+                npc.VelocityX = 0;
+                npc.VelocityY = 0;
+                npc.VelocityZ = 0;
+
                 _npcTasks.Remove(npc);
                 _npcRoamData.Remove(npc);
-
-                // Reset animation
-                npc.Animation = 0;
+                
             }
             finally
             {
                 _resourceSemaphore.Release();
             }
         }
+
+        public async Task RemoveNpcsAsync(int world, int zone)
+        {
+            await _resourceSemaphore.WaitAsync();
+            try
+            {
+                List<Entity> npcsToRemove = new List<Entity>();
+
+                foreach (var npcEntry in _npcRoamData)
+                {
+                    var npc = npcEntry.Key;
+                    if ((int)npc.World == world && npc.Zone == zone)
+                    {
+                        npcsToRemove.Add(npc);
+                    }
+                }
+
+                foreach (var npc in npcsToRemove)
+                {
+                    if (_npcCancellationTokens.TryGetValue(npc, out var cancellationTokenSource))
+                    {
+                        cancellationTokenSource.Cancel();
+                        cancellationTokenSource.Dispose();
+                        _npcCancellationTokens.Remove(npc);
+                    }
+
+                    if (_npcTasks.ContainsKey(npc))
+                    {
+                        _npcTasks.Remove(npc);
+                    }
+
+                    // Reset NPC's state to its original position and animation
+                    npc.Position = _npcRoamData[npc].OriginalPosition;
+                    npc.Animation = 0;
+                    npc.VelocityX = 0;
+                    npc.VelocityY = 0;
+                    npc.VelocityZ = 0;
+
+                    // Finally, remove the NPC from _npcRoamData
+                    _npcRoamData.Remove(npc);
+                }
+            }
+            finally
+            {
+                _resourceSemaphore.Release();
+            }
+
+            Console.WriteLine($"NPCs removed from roaming in World {world}, Zone {zone}.");
+        }
+
 
         public void Dispose()
         {

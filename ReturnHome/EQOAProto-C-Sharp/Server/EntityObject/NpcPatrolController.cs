@@ -90,13 +90,15 @@ namespace ReturnHome.Server.EntityObject
             List<Vector3> path = new List<Vector3>();
             float MovementSpeed = 0;
             int patrolState = 0;
-            int waypointIndex = 0;
             int pathIndex = 0;
             Vector3 direction = new Vector3();
             Vector3 newPosition = new Vector3();
             long patrollastUpdateTime = 0;
-            int patrolDirection = 1; // Direction of movement, 1 for forward, -1 for backward
+            int patrolDirection = 1;
             bool isPatrolling = true;
+            sbyte velocityX = 0;
+            sbyte velocityY = 0;
+            sbyte velocityZ = 0;
 
             // Ensure waypoints and pauses lists are of the same length
             if (waypoints.Count != pauses.Count)
@@ -104,38 +106,30 @@ namespace ReturnHome.Server.EntityObject
                 throw new InvalidOperationException("Waypoints and pauses lists must be of the same length.");
             }
 
+            var (completePath, completePauses) = CalculateCompletePathAndPauses(world, zone, waypoints, pauses);
+
             while (isPatrolling && !cancellationToken.IsCancellationRequested)
             {
                 switch (patrolState)
                 {
                     case 0: // use this case to init the patrol only
-                        waypointIndex = 1;
+                        pathIndex = 0;
                         patrolDirection = 1;
 
                         // update facing
-                        npc.Facing = UpdateFacing(npc.Position, waypoints[waypointIndex]);
+                        npc.Facing = UpdateFacing(npc.Position, completePath[pathIndex + 1]);
 
                         // Delay
-                        if (pauses[waypointIndex] > 0)
+                        if (completePauses[pathIndex] > 0)
                         {
-                            await Task.Delay(pauses[waypointIndex]); // Asynchronously wait for the pause duration
+                            await Task.Delay(completePauses[pathIndex]);
                         }
 
                         patrolState = 1;
                         break;
 
-                    case 1:
-                        // Record start time
-                        patrollastUpdateTime = Environment.TickCount;
-                        pathIndex = 1;
-                        // find path to first waypoint
-                        path = NavMeshManager.smoothPath(world, zone, npc.Position, waypoints[waypointIndex]);
-                        if (path.Count == 0)
-                        {
-                            Console.WriteLine("Path empty!");
-                            patrolState = 10;
-                            break;
-                        }
+                    case 1:                        
+                        pathIndex++;
 
                         patrolState = 2;
                         break;
@@ -149,6 +143,9 @@ namespace ReturnHome.Server.EntityObject
                         break;
 
                     case 3:
+                        // Record start time
+                        patrollastUpdateTime = Environment.TickCount;
+
                         // Simluate a 60 fps frame rate
                         await Task.Delay(16);
 
@@ -157,10 +154,10 @@ namespace ReturnHome.Server.EntityObject
 
                     case 4:
                         // Calculate direction vector
-                        direction = Vector3.Normalize(path[pathIndex] - npc.Position);
+                        direction = Vector3.Normalize(completePath[pathIndex] - npc.Position);
 
                         // update facing
-                        npc.Facing = UpdateFacing(npc.Position, waypoints[waypointIndex]);
+                        npc.Facing = UpdateFacing(npc.Position, completePath[pathIndex]);
 
                         patrolState = 5;
                         break;
@@ -169,9 +166,27 @@ namespace ReturnHome.Server.EntityObject
                         // Calculate the elapsed time since the last frame
                         long currentTime = Environment.TickCount;
                         long deltaTime = currentTime - patrollastUpdateTime;
+                        
+                        float elapsedSeconds = deltaTime / 1000.0f;                        
+
+                        // Specify the maximum movement speed
+                        float maxSpeed = 20.0f;
+
+                        // Calculate the normalized movement speed
+                        float normalizedSpeed = MovementSpeed / maxSpeed;
+
+                        // Calculate the displacement
+                        Vector3 displacement = direction * normalizedSpeed * elapsedSeconds;
+
+                        // Calculate the maximum possible displacement within the given time frame
+                        float maxDisplacement = normalizedSpeed * elapsedSeconds;
+
+                        // Calculate velocity components
+                        velocityX = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.X / maxDisplacement)) * Math.Sign(displacement.X) * normalizedSpeed * sbyte.MaxValue);
+                        velocityY = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Y / maxDisplacement)) * Math.Sign(displacement.Y) * normalizedSpeed * sbyte.MaxValue);
+                        velocityZ = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Z / maxDisplacement)) * Math.Sign(displacement.Z) * normalizedSpeed * sbyte.MaxValue);
 
                         // Calculate the new position based on the elapsed time
-                        float elapsedSeconds = deltaTime / 1000.0f;
                         newPosition = npc.Position + direction * MovementSpeed * elapsedSeconds;
 
                         // Update the lastUpdateTime
@@ -183,24 +198,20 @@ namespace ReturnHome.Server.EntityObject
                     case 6:
                         // Update npc position
                         npc.Position = newPosition;
+                        npc.VelocityX = (ushort)velocityX;
+                        npc.VelocityY = (ushort)velocityY;
+                        npc.VelocityZ = (ushort)velocityZ;
 
                         patrolState = 7;
                         break;
 
                     case 7:
                         //Check distance to target if moving forward
-                        float distance = Vector3.Distance(path[pathIndex], npc.Position);
+                        float distance = Vector3.Distance(completePath[pathIndex], npc.Position);
 
                         if (distance < 0.1)
                         {
-                            // increment the path index
-                            pathIndex++;
-                            if (pathIndex >= path.Count)
-                            {
-                                pathIndex = path.Count;
-                                patrolState = 8;
-                            }
-                            else patrolState = 3;
+                            patrolState = 8;                            
                         }
                         else
                         {
@@ -210,38 +221,33 @@ namespace ReturnHome.Server.EntityObject
                         break;
 
                     case 8:
-                        // set animation and speed
-                        npc.Animation = 0;
-                        MovementSpeed = 0;
-
                         // Delay
-                        if (pauses[waypointIndex] > 0)
+                        if (completePauses[pathIndex] > 0)
                         {
-                            await Task.Delay(pauses[waypointIndex]); // Asynchronously wait for the pause duration
+                            npc.Animation = 0;
+                            MovementSpeed = 0;
+                            await Task.Delay(completePauses[pathIndex]);
                         }
 
-                        // check if target is the last patrol point or starting point
-                        if (waypointIndex == waypoints.Count - 1)
+                        // Check if the target is the last patrol point or starting point
+                        if (pathIndex == completePath.Count - 1)
                         {
-                            //set patrol direction to backwards
+                            // Set patrol direction to backwards
                             patrolDirection = -1;
-
-                            // increment/decrement targetIndex based on movement direction
-                            waypointIndex += patrolDirection;
-                            patrolState = 1;
                         }
-                        else if (waypointIndex == 0)
+                        else if (pathIndex == 0)
                         {
-                            patrolState = 0;
-                        }
-                        else
-                        {
-                            // increment/decrement targetIndex based on movement direction
-                            waypointIndex += patrolDirection;
-                            patrolState = 1;
+                            // Set patrol direction to forward
+                            patrolDirection = 1;
                         }
 
+                        // Adjust pathIndex based on patrolDirection
+                        pathIndex += patrolDirection;
+
+                        // Reset patrolState to reinitialize the patrol
+                        patrolState = 2;
                         break;
+
 
                     case 10:
 
@@ -253,6 +259,34 @@ namespace ReturnHome.Server.EntityObject
                         break;
                 }
             }
+        }
+
+        private (List<Vector3> completePath, List<int> completePauses) CalculateCompletePathAndPauses(int world, int zone, List<Vector3> waypoints, List<int> pauses)
+        {
+            List<Vector3> completePath = new List<Vector3>();
+            List<int> completePauses = new List<int>();
+
+            for (int i = 0; i < waypoints.Count - 1; i++)
+            {
+                // Calculate path between waypoints[i] and waypoints[i + 1]
+                List<Vector3> pathSegment = NavMeshManager.smoothPath(world, zone, waypoints[i], waypoints[i + 1]);
+
+                // For the path segment, add points and pauses
+                for (int j = 0; j < pathSegment.Count; j++)
+                {
+                    completePath.Add(pathSegment[j]);
+                    // Add pause only if it's not the last point of the last segment
+                    if (!(i == waypoints.Count - 2 && j == pathSegment.Count - 1))
+                    {
+                        completePauses.Add(j == 0 ? pauses[i] : 0); // Add the pause for the starting point of the segment
+                    }
+                }
+            }
+
+            // Add the pause for the last waypoint
+            completePauses.Add(pauses[pauses.Count - 1]);
+
+            return (completePath, completePauses);
         }
 
         public async Task RemoveNpcAsync(Entity npc)
@@ -268,13 +302,66 @@ namespace ReturnHome.Server.EntityObject
                 _npcTasks.Remove(npc);
                 _npcPatrolData.Remove(npc);
 
-                // Reset animation
+                // Reset NPC's state to its original position and animation
+                npc.Position = _npcPatrolData[npc].OriginalPosition;
                 npc.Animation = 0;
+                npc.VelocityX = 0;
+                npc.VelocityY = 0;
+                npc.VelocityZ = 0;
             }
             finally
             {
                 _resourceSemaphore.Release();
             }
+        }
+
+        public async Task RemoveNpcsAsync(int world, int zone)
+        {
+            await _resourceSemaphore.WaitAsync();
+            try
+            {                
+                List<Entity> npcsToRemove = new List<Entity>();
+
+                foreach (var npcEntry in _npcPatrolData)
+                {
+                    var npc = npcEntry.Key;
+                    if ((int)npc.World == world && npc.Zone == zone)
+                    {
+                        npcsToRemove.Add(npc);
+                    }
+                }
+
+                foreach (var npc in npcsToRemove)
+                {
+                    if (_npcCancellationTokens.TryGetValue(npc, out var cancellationTokenSource))
+                    {
+                        cancellationTokenSource.Cancel();
+                        cancellationTokenSource.Dispose();
+                        _npcCancellationTokens.Remove(npc);
+                    }
+
+                    if (_npcTasks.ContainsKey(npc))
+                    {
+                        _npcTasks.Remove(npc);
+                    }
+
+                    // Reset NPC's state to its original position and animation
+                    npc.Position = _npcPatrolData[npc].OriginalPosition;
+                    npc.Animation = 0;
+                    npc.VelocityX = 0;
+                    npc.VelocityY = 0;
+                    npc.VelocityZ = 0;
+
+                    // Finally, remove the NPC from _npcRoamData
+                    _npcPatrolData.Remove(npc);
+                }
+            }
+            finally
+            {
+                _resourceSemaphore.Release();
+            }
+
+            Console.WriteLine($"NPCs removed from patrolling in World {world}, Zone {zone}.");
         }
 
         public void Dispose()

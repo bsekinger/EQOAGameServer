@@ -127,7 +127,7 @@ namespace ReturnHome.Server.Opcodes.Chat
             if (temp[0] == "!z")
             {
                 int zone;
-                zone = MySession.MyCharacter.zone;
+                zone = MySession.MyCharacter.Zone;
                 message = $"Zone = {zone}";
 
                 GenerateClientSpecificChat(MySession, message);

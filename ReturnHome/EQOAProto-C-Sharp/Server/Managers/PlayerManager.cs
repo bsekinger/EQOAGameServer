@@ -5,8 +5,8 @@ using ReturnHome.Server.EntityObject.Player;
 namespace ReturnHome.Server.Managers
 {
     public static class PlayerManager
-    {
-        private static List<Character> playerList = new();
+    {        
+        public static List<Character> playerList = new();
 
         public static bool AddPlayer(Character character)
         {

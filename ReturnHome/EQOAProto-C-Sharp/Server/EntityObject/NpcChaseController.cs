@@ -63,6 +63,9 @@ namespace ReturnHome.Server.EntityObject
             object timerLock = new object();
             Vector3 velocity = new Vector3();
             bool isChasing = true;
+            sbyte velocityX = 0;
+            sbyte velocityY = 0;
+            sbyte velocityZ = 0;
 
             System.Timers.Timer pathUpdateTimer = new System.Timers.Timer(500);
 
@@ -170,14 +173,31 @@ namespace ReturnHome.Server.EntityObject
                         // Calculate the elapsed time since the last frame
                         long currentTime = Environment.TickCount;
                         long deltaTime = currentTime - lastUpdateTime;
-                        //Console.WriteLine($"Delta Time (ms): {deltaTime}");
+
+                        // Specify the maximum movement speed
+                        float maxSpeed = 20.0f;
+
+                        // Calculate the normalized movement speed
+                        float normalizedSpeed = movementSpeed / maxSpeed;
 
                         // Calculate the new position based on the elapsed time
-                        float elapsedSeconds = deltaTime / 1000.0f; // Convert to seconds
+                        float elapsedSeconds = deltaTime / 1000.0f;
+
+                        // Calculate the displacement
+                        Vector3 displacement = direction * normalizedSpeed * elapsedSeconds;
+
+                        // Calculate the maximum possible displacement within the given time frame
+                        float maxDisplacement = normalizedSpeed * elapsedSeconds;
+
+                        // Calculate velocity components
+                        velocityX = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.X / maxDisplacement)) * Math.Sign(displacement.X) * normalizedSpeed * sbyte.MaxValue);
+                        velocityY = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Y / maxDisplacement)) * Math.Sign(displacement.Y) * normalizedSpeed * sbyte.MaxValue);
+                        velocityZ = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Z / maxDisplacement)) * Math.Sign(displacement.Z) * normalizedSpeed * sbyte.MaxValue);
+
                         newPosition = npc.Position + direction * movementSpeed * elapsedSeconds;
 
-                        // Calculate velocity
-                        velocity = direction * movementSpeed;
+                        // Calculate the new position based on the elapsed time                        
+                        newPosition = npc.Position + direction * movementSpeed * elapsedSeconds;
 
                         // Update the last update time
                         lastUpdateTime = currentTime;
@@ -186,8 +206,11 @@ namespace ReturnHome.Server.EntityObject
                         break;
 
                     case 6:
-                        // Update npc position
+                        // Update npc position and velocity
                         npc.Position = newPosition;
+                        npc.VelocityX = (ushort)velocityX;
+                        npc.VelocityY = (ushort)velocityY;
+                        npc.VelocityZ = (ushort)velocityZ;
 
                         chaseState = 7;
                         break;
@@ -261,6 +284,8 @@ namespace ReturnHome.Server.EntityObject
 
                         if (targetIndex >= path.Count)
                         {
+                            npc.Position = _npcChaseData[npc].OriginalPosition;
+                            npc.Facing = _npcChaseData[npc].OriginalFacing;
                             chaseState = 20; // Stop if the path is empty or finished
                             break;
                         }
@@ -278,14 +303,28 @@ namespace ReturnHome.Server.EntityObject
                         // Calculate the elapsed time since the last frame
                         currentTime = Environment.TickCount;
                         deltaTime = currentTime - lastUpdateTime;
-                        //Console.WriteLine($"Delta Time (ms): {deltaTime}");
+
+                        // Specify the maximum movement speed
+                        maxSpeed = 20.0f;
+
+                        // Calculate the normalized movement speed
+                        normalizedSpeed = movementSpeed / maxSpeed;
 
                         // Calculate the new position based on the elapsed time
-                        elapsedSeconds = deltaTime / 1000.0f; // Convert to seconds
-                        newPosition = npc.Position + direction * movementSpeed * elapsedSeconds;
+                        elapsedSeconds = deltaTime / 1000.0f;
 
-                        // Calculate velocity
-                        velocity = direction * movementSpeed;
+                        // Calculate the displacement
+                        displacement = direction * normalizedSpeed * elapsedSeconds;
+
+                        // Calculate the maximum possible displacement within the given time frame
+                        maxDisplacement = normalizedSpeed * elapsedSeconds;
+
+                        // Calculate velocity components
+                        velocityX = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.X / maxDisplacement)) * Math.Sign(displacement.X) * normalizedSpeed * sbyte.MaxValue);
+                        velocityY = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Y / maxDisplacement)) * Math.Sign(displacement.Y) * normalizedSpeed * sbyte.MaxValue);
+                        velocityZ = (sbyte)(Math.Min(1.0f, Math.Abs(displacement.Z / maxDisplacement)) * Math.Sign(displacement.Z) * normalizedSpeed * sbyte.MaxValue);
+
+                        newPosition = npc.Position + direction * movementSpeed * elapsedSeconds;
 
                         // Update the last update time
                         lastUpdateTime = currentTime;
@@ -296,6 +335,9 @@ namespace ReturnHome.Server.EntityObject
                     case 17:
                         // Update npc position
                         npc.Position = newPosition;
+                        npc.VelocityX = (ushort)velocityX;
+                        npc.VelocityY = (ushort)velocityY;
+                        npc.VelocityZ = (ushort)velocityZ;
 
                         chaseState = 18;
                         break;
@@ -320,10 +362,12 @@ namespace ReturnHome.Server.EntityObject
                         pathUpdateTimer = null;
 
                         npc.Animation = 0;
+                        npc.VelocityX = 0;
+                        npc.VelocityY = 0;
+                        npc.VelocityZ = 0;
                         movementSpeed = 0;
 
                         chaseState = 0;
-                        Task.Run(() => RemoveNpcAsync(npc)).ConfigureAwait(false);
                         return;
                 }
             }
@@ -331,7 +375,7 @@ namespace ReturnHome.Server.EntityObject
 
         private List<Vector3> OnPathUpdate(int world, int zone, Vector3 npcPosition, Vector3 playerPosition)
         {
-            List<Vector3> path = NavMeshManager.path(world, zone, npcPosition, playerPosition);
+            List<Vector3> path = NavMeshManager.smoothPath(world, zone, npcPosition, playerPosition);
             return path;
         }
 
@@ -362,6 +406,10 @@ namespace ReturnHome.Server.EntityObject
 
                 // Reset animation
                 npc.Animation = 0;
+                npc.Animation = 0;
+                npc.VelocityX = 0;
+                npc.VelocityY = 0;
+                npc.VelocityZ = 0;
             }
             finally
             {

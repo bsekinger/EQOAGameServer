@@ -78,12 +78,11 @@ namespace ReturnHome.Server.EntityObject
 
         public void ObjectUpdateVelocityY()
         {
-            /*
-            sbyte svy = (sbyte)Math.Round(VelocityY * _speedAdjust);
-            if (svy > 127) { Console.WriteLine("WARNING: svx=" + svy); svy = 127; }
-            if (svy < -128) { Console.WriteLine("WARNING: svx=" + svy); svy = -128; }
+            //sbyte svy = (sbyte)Math.Round(VelocityY * _speedAdjust);
+            //if (svy > 127) { Console.WriteLine("WARNING: svx=" + svy); svy = 127; }
+            //if (svy < -128) { Console.WriteLine("WARNING: svx=" + svy); svy = -128; }
+            ushort svy = VelocityY;
             MemoryMarshal.Write(ObjectUpdate.Span[41..], ref svy);
-            */
         }
 
         public void ObjectUpdateVelocityZ()

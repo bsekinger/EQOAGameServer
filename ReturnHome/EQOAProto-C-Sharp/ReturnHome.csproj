@@ -64,6 +64,10 @@
     <None Remove="Scripts\Guard_Filgen.lua" />
     <None Remove="Scripts\hazinak\coachman_zelik.lua" />
     <None Remove="Scripts\items.lua" />
+    <None Remove="Scripts\patrollers\Guard_Crispin.lua" />
+    <None Remove="Scripts\patrollers\Guard_Welling.lua" />
+    <None Remove="Scripts\patrollers\Horse_Pritcher.lua" />
+    <None Remove="Scripts\patrollers\Julian_Tallfellow.lua" />
     <None Remove="Scripts\ports.lua" />
     <None Remove="Scripts\QuestHelper.lua" />
     <None Remove="Scripts\Quests.json" />
@@ -78,9 +82,20 @@
     <Content Include="Scripts\freeport\FreeportQuests.lua" />
     <Content Include="Scripts\freeport\Magician_start.lua" />
     <Content Include="Scripts\freeport\Quests.json" />
-    <Content Include="Scripts\patrollers\Guard_Filgen.lua" />
+    <Content Include="Scripts\patrollers\Guard_Crispin.lua">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="Scripts\hazinak\coachman_zelik.lua" />
     <Content Include="Scripts\items.lua" />
+    <Content Include="Scripts\patrollers\Guard_Welling.lua">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Scripts\patrollers\Horse_Pritcher.lua">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Scripts\patrollers\Julian_Tallfellow.lua">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="Scripts\ports.lua" />
     <Content Include="Scripts\QuestHelper.lua" />
     <Content Include="Scripts\rivervale\Mario_Steeltoe.lua" />

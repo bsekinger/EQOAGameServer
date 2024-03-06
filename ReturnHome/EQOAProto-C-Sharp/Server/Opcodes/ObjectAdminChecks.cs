@@ -4,6 +4,7 @@ using ReturnHome.Server.Network;
 using ReturnHome.Server.Opcodes.Messages.Server;
 using ReturnHome.Server.EntityObject.Stats;
 using System.Threading.Tasks;
+using System.IO;
 
 namespace ReturnHome.Server.Opcodes.Chat
 {
@@ -228,65 +229,63 @@ namespace ReturnHome.Server.Opcodes.Chat
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 
-                    case "roam":        //Added for NPC Movement
-                        if (c.RoamType == 1)
-                        { 
-                            int world = (int)MySession.MyCharacter.World;
-                            int zone = MySession.MyCharacter.zone;
-                            c.isRoaming = true;
+                    case "startnpcs":        //Added for NPC Movement
+                        int world = (int)MySession.MyCharacter.World;
+                        int zone = MySession.MyCharacter.Zone;
 
-                            // Use the shared instance of the roamController
-                            _ = WorldServer.npcRoamController.AddNpcAsync(world, zone, c);
-                        }
-                        else
-                        {
-                            message = $"Character: {c.CharName}, is not defined as a roamer.";
-                            ChatMessage.GenerateClientSpecificChat(MySession, message);
-                        }                        
-                        break;
+                        _ = ZoneManager.StartNpcsForZoneIfNeeded(world, zone);
                         
+                        break;
+
+                    case "patrol":       //Added for NPC Movement
+                        int world4 = (int)MySession.MyCharacter.World;
+                        int zone4 = MySession.MyCharacter.Zone;
+
+                        _ = WorldServer.npcPatrolController.AddNpcAsync(world4, zone4, c);
+
+                        break;
+
+                    case "stppatrol":
+
+                        _ = WorldServer.npcPatrolController.RemoveNpcAsync(c);
+
+                        break;
+
+                    case "roam":       //Added for NPC Movement
+                        int world6 = (int)MySession.MyCharacter.World;
+                        int zone6 = MySession.MyCharacter.Zone;
+
+                        _ = WorldServer.npcRoamController.AddNpcAsync(world6, zone6, c);
+
+                        break;
+
+                    case "stproam":
+
+                        _ = WorldServer.npcRoamController.RemoveNpcAsync(c);
+
+                        break;
+
                     case "chase":        //Added for NPC Movement                        
                         Entity a = MySession.MyCharacter;
 
                         int world2 = (int)MySession.MyCharacter.World;
-                        int zone2 = MySession.MyCharacter.zone;
+                        int zone2 = MySession.MyCharacter.Zone;
                         c.isChasing = true;
 
-                        // Use the shared instance of the roamController
                         _ = WorldServer.npcChaseController.AddNpcAsync(world2, zone2, a, c);
 
                         break;
 
-                    case "patrol":      //Added for NPC Movement
-                        if (c.RoamType == 2)
-                        {
-                            int world3 = (int)MySession.MyCharacter.World;
-                            int zone3 = MySession.MyCharacter.zone;
-                            c.isPatrolling = true;
+                     case "stpnpcs":
+                        int world3 = (int)MySession.MyCharacter.World;
+                        int zone3 = MySession.MyCharacter.Zone;
+                        string zoneKey = $"{world3}_{zone3}";
 
-                            // Use the shared instance of NPCMovement
-                            _ = WorldServer.npcPatrolController.AddNpcAsync(world3, zone3, c);
-                        }
-                        else
-                        {
-                            message = $"Character: {c.CharName}, is not defined as a patroller.";
-                            ChatMessage.GenerateClientSpecificChat(MySession, message);
-                        }
-                        break;
+                        _ = WorldServer.npcRoamController.RemoveNpcsAsync(world3, zone3);
+                        _ = WorldServer.npcPatrolController.RemoveNpcsAsync(world3, zone3);
 
-                    case "stproam":
-                        if (c.RoamType == 1)
-                        {
-                            c.isRoaming = false;
+                        ZoneManager.zonesWithNpcsStarted.Remove(zoneKey);
 
-                            // Use the shared instance of the roamController
-                            _ = WorldServer.npcRoamController.RemoveNpcAsync(c);
-                        }
-                        else
-                        {
-                            message = $"Character: {c.CharName}, is not defined as a roamer.";
-                            ChatMessage.GenerateClientSpecificChat(MySession, message);
-                        }
                         break;
 
                     case "stpchase":                        
@@ -297,17 +296,30 @@ namespace ReturnHome.Server.Opcodes.Chat
                         
                         break;
 
-                    case "stppatrol":
+                    case "root":
+                        Entity b = MySession.MyCharacter;
+                        int world5 = (int)MySession.MyCharacter.World;
+                        int zone5 = MySession.MyCharacter.Zone;
+
+                        _ = WorldServer.npcRoamController.RemoveNpcAsync(c);
+                        c.isRoaming = false;
+                        _ = WorldServer.npcChaseController.RemoveNpcAsync(c);
+                        c.isChasing = false;
+                        _ = WorldServer.npcPatrolController.RemoveNpcAsync(c);
                         c.isPatrolling = false;
 
-                        // Use the shared instance of the roamController
-                        _ = WorldServer.npcPatrolController.RemoveNpcAsync(c);
+                        _ = WorldServer.npcRootController.AddNpcAsync(world5, zone5, b, c);
+                        
+                        break;
+
+                    case "stproot":
+                        _ = WorldServer.npcRootController.RemoveNpcAsync(c);
 
                         break;
 
 
                     case "coords":
-                        message = $"X: " + c.x + ", Y: " + c.y + ", Z: " + c.z;
+                        message = $"X: {c.x}, Y: {c.y}, Z: {c.z}";
                         ChatMessage.GenerateClientSpecificChat(MySession, message);
                         break;
 

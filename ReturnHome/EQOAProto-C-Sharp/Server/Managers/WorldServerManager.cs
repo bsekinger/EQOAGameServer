@@ -14,10 +14,13 @@ namespace ReturnHome.Server.Managers
 {
     public static class WorldServer
     {
-        // Initialize a single shared instance of NPCMovement for each type of movement
+        public static NPCMovementManager npcMovementManager = new NPCMovementManager();
+
+        // Initialize a single shared instance of of each movement controller
         public static NpcRoamController npcRoamController = new NpcRoamController(); //Added for NPC Movement
         public static NpcChaseController npcChaseController = new NpcChaseController(); //Added for NPC Movement
         public static NpcPatrolController npcPatrolController = new NpcPatrolController(); //Added for NPC Movement
+        public static NpcRootController npcRootController = new NpcRootController(); //Added for NPC movement
 
         private static Stopwatch gameTimer;
         private static int serverTick = 1000 / 10;
@@ -27,7 +30,7 @@ namespace ReturnHome.Server.Managers
 
         }
 
-        public static void Initialize()
+        public static async void Initialize()
         {
             //Creates NPC List
             Console.WriteLine("Collecting Item Patterns...");
@@ -80,6 +83,23 @@ namespace ReturnHome.Server.Managers
             thread.Name = "World Manager";
             thread.Priority = ThreadPriority.Highest;
             thread.Start();
+            
+            using (var cancellationTokenSource = new CancellationTokenSource())
+            {
+                try
+                {                    
+                    await ZoneManager.CheckZonesForPlayers(cancellationTokenSource.Token);
+                    
+                }
+                catch (OperationCanceledException)
+                {
+                    Console.WriteLine("Checking zones for players was canceled.");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"An error occurred: {ex.Message}");
+                }
+            }
         }
 
         public async static void UpdateWorld()
